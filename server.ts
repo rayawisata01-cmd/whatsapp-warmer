@@ -2,10 +2,6 @@
  * Custom Next.js Server with Socket.io WebSocket Proxy
  * 
  * Uses Express + http-proxy-middleware for proper Socket.io proxying.
- * 
- * NOTE: Express 5.x requires different wildcard syntax:
- * - OLD: app.all('*', handler)
- * - NEW: app.all('{*path}', handler) or app.use(middleware)
  */
 
 import express from 'express';
@@ -47,27 +43,41 @@ const socketProxy = createProxyMiddleware({
   changeOrigin: true,
   ws: true, // Enable WebSocket proxying
   secure: false,
+  logger: console, // Enable logging for debugging
   
   // Rewrite path: /api/socket.io/* → /socket.io/*
-  pathRewrite: {
-    '^/api/socket.io': '/socket.io',
+  pathRewrite: (path: string) => {
+    const newPath = path.replace('/api/socket.io', '/socket.io');
+    console.log(`[Proxy] Path rewrite: ${path} -> ${newPath}`);
+    return newPath;
   },
   
-  // Log errors only
-  onError: (err: Error) => {
-    console.error('[Proxy Error]', err.message);
+  on: {
+    error: (err: Error) => {
+      console.error('[Proxy Error]', err.message);
+    },
+    proxyReq: (proxyReq: any, req: any) => {
+      console.log(`[Proxy] -> ${req.method} ${req.url}`);
+    },
   },
 });
 
-// Mount Socket.io proxy at /api/socket.io
-expressApp.use('/api/socket.io', socketProxy);
+// ========================================
+// MOUNT SOCKET.IO PROXY FIRST
+// ========================================
+// This must come BEFORE the Next.js handler!
+// Using a more specific path match
+
+expressApp.use('/api/socket.io', (req, res, next) => {
+  console.log(`[Express] Socket.io request: ${req.method} ${req.url}`);
+  return socketProxy(req, res, next);
+});
 
 // ========================================
-// NEXT.JS ROUTES
+// NEXT.JS ROUTES (FALLBACK)
 // ========================================
-// Use a middleware function instead of app.all('{*path}') for better compatibility
 
-expressApp.use(async (req: any, res: any, next: any) => {
+expressApp.use(async (req: any, res: any) => {
   try {
     const parsedUrl = parse(req.url!, true);
     await handle(req, res, parsedUrl);
@@ -91,7 +101,7 @@ server.on('upgrade', (req, socket, head) => {
   const { pathname } = parse(req.url!, true);
   
   if (pathname?.startsWith('/api/socket.io')) {
-    console.log('[Server] WebSocket upgrade for Socket.io');
+    console.log('[Server] WebSocket upgrade for Socket.io:', pathname);
     (socketProxy as any).upgrade(req, socket, head);
   } else {
     socket.destroy();
