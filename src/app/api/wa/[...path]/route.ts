@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const WHATSAPP_SERVICE = 'http://localhost:3030';
+// Railway Private Networking: Use internal DNS hostname
+// Format: http://{SERVICE_NAME}.railway.internal:{PORT}
+// Service name must match the Railway service name exactly
+const WHATSAPP_SERVICE_HOST = process.env.WHATSAPP_SERVICE_HOST || 'localhost';
+const WHATSAPP_SERVICE_PORT = process.env.WHATSAPP_SERVICE_PORT || '3030';
+const WHATSAPP_SERVICE = `http://${WHATSAPP_SERVICE_HOST}:${WHATSAPP_SERVICE_PORT}`;
 
 // Timeout configuration
 // Short timeout for quick operations, long for session operations

@@ -1,4 +1,6 @@
-// Import Prisma Client - resolves to root node_modules via NODE_PATH or symlink
+// Database client for WhatsApp Service
+// Uses Prisma Client with DATABASE_URL environment variable
+
 import { PrismaClient } from '@prisma/client'
 
 const globalForPrisma = globalThis as unknown as {

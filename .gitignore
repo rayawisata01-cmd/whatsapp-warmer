@@ -54,6 +54,9 @@ server.log
 mini-services/whatsapp-service/sessions/
 mini-services/whatsapp-service/backups/
 mini-services/whatsapp-service/*.log
+whatsapp-service/sessions/
+whatsapp-service/backups/
+whatsapp-service/*.log
 data/
 *.db
 *.db-journal

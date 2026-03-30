@@ -1,11 +1,10 @@
 generator client {
   provider = "prisma-client-js"
-  output   = "../node_modules/.prisma/client"
 }
 
 datasource db {
   provider = "sqlite"
-  url      = "file:/home/z/my-project/db/custom.db"
+  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -51,9 +50,9 @@ model WhatsAppAccount {
   
   // Rate limiting
   rateLimitHourCount   Int      @default(0)
-  rateLimitDayCount    Int      @default(0)
+  rateLimitDayCount   Int      @default(0)
   rateLimitHourReset   DateTime @default(now())
-  rateLimitDayReset    DateTime @default(now())
+  rateLimitDayReset   DateTime @default(now())
   
   // Current chat partner
   currentChatPartnerId String?

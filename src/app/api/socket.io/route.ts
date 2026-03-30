@@ -1,13 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const WHATSAPP_SERVICE_URL = process.env.WHATSAPP_SERVICE_URL || 'http://localhost:3030';
+// Railway Private Networking: Use internal DNS hostname
+// Format: http://{SERVICE_NAME}.railway.internal:{PORT}
+// Service name must match the Railway service name exactly
+const WHATSAPP_SERVICE_HOST = process.env.WHATSAPP_SERVICE_HOST || 'localhost';
+const WHATSAPP_SERVICE_PORT = process.env.WHATSAPP_SERVICE_PORT || '3030';
+const WHATSAPP_SERVICE_URL = `http://${WHATSAPP_SERVICE_HOST}:${WHATSAPP_SERVICE_PORT}`;
+
 // CRITICAL: Timeout must be longer than server pingTimeout (180s) to avoid premature disconnection
 const REQUEST_TIMEOUT = 200000; // ~3.3 minutes - longer than server's 180s pingTimeout
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 500;
 
 function log(...args: any[]) {
-  console.log('[Socket.io Proxy]', new Date().toISOString().split('T')[1], ...args);
+  console.log('[Socket.io Proxy]', new Date().toISOString().split('T')[1], 'Target:', WHATSAPP_SERVICE_URL, ...args);
 }
 
 function createSocketioError(message: string, code: number = 500): NextResponse {
