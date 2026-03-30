@@ -1,14 +1,14 @@
 /**
  * Custom Next.js Server with Socket.io WebSocket Proxy
  * 
- * Uses Express + http-proxy-middleware for proper Socket.io proxying.
+ * Simpler approach: Handle Socket.io directly in the HTTP server
+ * without relying on Express middleware path matching.
  */
 
-import express from 'express';
-import { createProxyMiddleware } from 'http-proxy-middleware';
 import { createServer } from 'http';
-import next from 'next';
 import { parse } from 'url';
+import { createProxyMiddleware } from 'http-proxy-middleware';
+import next from 'next';
 
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = '0.0.0.0';
@@ -27,79 +27,52 @@ console.log(`Port: ${port}`);
 console.log(`WhatsApp Service URL: ${WHATSAPP_SERVICE_URL}`);
 console.log('='.repeat(60));
 
-// Create Express app
-const expressApp = express();
-
 // Create Next.js app
-const nextApp = next({ dev, hostname, port });
-const handle = nextApp.getRequestHandler();
+const app = next({ dev, hostname, port });
+const handle = app.getRequestHandler();
 
-// ========================================
-// SOCKET.IO PROXY CONFIGURATION
-// ========================================
-
+// Create proxy for Socket.io
 const socketProxy = createProxyMiddleware({
   target: WHATSAPP_SERVICE_URL,
   changeOrigin: true,
-  ws: true, // Enable WebSocket proxying
+  ws: true,
   secure: false,
-  logger: console, // Enable logging for debugging
-  
-  // Rewrite path: /api/socket.io/* → /socket.io/*
-  pathRewrite: (path: string) => {
-    const newPath = path.replace('/api/socket.io', '/socket.io');
-    console.log(`[Proxy] Path rewrite: ${path} -> ${newPath}`);
-    return newPath;
-  },
-  
+  pathRewrite: (path: string) => path.replace('/api/socket.io', '/socket.io'),
   on: {
-    error: (err: Error) => {
-      console.error('[Proxy Error]', err.message);
-    },
+    error: (err: Error) => console.error('[Proxy Error]', err.message),
     proxyReq: (proxyReq: any, req: any) => {
-      console.log(`[Proxy] -> ${req.method} ${req.url}`);
+      console.log(`[Proxy] ${req.method} ${req.url} -> ${WHATSAPP_SERVICE_URL}`);
     },
   },
 });
 
-// ========================================
-// MOUNT SOCKET.IO PROXY FIRST
-// ========================================
-// This must come BEFORE the Next.js handler!
-// Using a more specific path match
-
-expressApp.use('/api/socket.io', (req, res, next) => {
-  console.log(`[Express] Socket.io request: ${req.method} ${req.url}`);
-  return socketProxy(req, res, next);
-});
-
-// ========================================
-// NEXT.JS ROUTES (FALLBACK)
-// ========================================
-
-expressApp.use(async (req: any, res: any) => {
+// Create HTTP server
+const server = createServer(async (req, res) => {
   try {
     const parsedUrl = parse(req.url!, true);
+    const { pathname } = parsedUrl;
+
+    // Handle Socket.io requests (both polling and initial handshake)
+    if (pathname?.startsWith('/api/socket.io')) {
+      console.log(`[Server] Socket.io request: ${req.method} ${pathname}`);
+      (socketProxy as any)(req, res);
+      return;
+    }
+
+    // Handle all other requests with Next.js
     await handle(req, res, parsedUrl);
   } catch (err) {
-    console.error('[Next.js Error]', err);
-    if (!res.headersSent) {
-      res.statusCode = 500;
-      res.end('Internal Server Error');
-    }
+    console.error('[Server Error]', err);
+    res.statusCode = 500;
+    res.end('Internal Server Error');
   }
 });
 
-// ========================================
-// CREATE HTTP SERVER
-// ========================================
-
-const server = createServer(expressApp);
-
 // Handle WebSocket upgrade requests
 server.on('upgrade', (req, socket, head) => {
-  const { pathname } = parse(req.url!, true);
-  
+  const parsedUrl = parse(req.url!, true);
+  const { pathname } = parsedUrl;
+
   if (pathname?.startsWith('/api/socket.io')) {
     console.log('[Server] WebSocket upgrade for Socket.io:', pathname);
     (socketProxy as any).upgrade(req, socket, head);
@@ -108,11 +81,8 @@ server.on('upgrade', (req, socket, head) => {
   }
 });
 
-// ========================================
-// START SERVER
-// ========================================
-
-nextApp.prepare().then(() => {
+// Start server
+app.prepare().then(() => {
   server.listen(port, hostname, () => {
     console.log(`\n🚀 Server ready at http://${hostname}:${port}`);
     console.log(`📡 Socket.io proxy: /api/socket.io → ${WHATSAPP_SERVICE_URL}/socket.io`);
