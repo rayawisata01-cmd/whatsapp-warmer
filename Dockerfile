@@ -34,7 +34,6 @@ FROM base AS builder
 
 # Copy node_modules from deps
 COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/.prisma ./.prisma
 
 # Copy source files
 COPY . .
@@ -59,7 +58,6 @@ COPY --from=builder /app/.next/static ./.next/static
 
 # Copy node_modules and prisma
 COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/.prisma ./.prisma
 COPY --from=builder /app/prisma ./prisma
 
 # Copy whatsapp-service source files
@@ -69,7 +67,7 @@ COPY whatsapp-service/db.ts ./whatsapp-service/db.ts
 COPY whatsapp-service/config.json ./whatsapp-service/config.json
 COPY whatsapp-service/prisma ./whatsapp-service/prisma
 
-# Install whatsapp-service dependencies (without frozen-lockfile)
+# Install whatsapp-service dependencies
 RUN cd /app/whatsapp-service && bun install && bunx prisma generate
 
 # Copy start script
