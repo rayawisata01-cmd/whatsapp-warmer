@@ -31,24 +31,24 @@ const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: '*',
+    origin: '*', // Allow all origins
     methods: ['GET', 'POST'],
-    credentials: true
+    credentials: true,
   },
-  allowEIO3: true,
-  // UPDATED: WebSocket support enabled via custom Next.js server
-  // Custom server uses http-proxy-middleware for proper WebSocket proxying
-  transports: ['polling', 'websocket'], // Both transports supported
+  allowEIO3: true, // Support older Engine.IO clients
+  // FIXED: WebSocket-first configuration
+  // Both transports supported for maximum compatibility
+  transports: ['websocket', 'polling'],
   path: '/socket.io',
-  // Standard timeouts - WebSocket is more reliable now
-  pingTimeout: 60000, // 60 seconds
-  pingInterval: 25000, // 25 seconds
+  // Timeouts optimized for Railway/Cloud deployment
+  pingTimeout: 60000, // 60 seconds - must be > client timeout
+  pingInterval: 25000, // 25 seconds between pings
   maxHttpBufferSize: 1e7, // 10MB for large QR codes
   // Allow WebSocket upgrades
   allowUpgrades: true,
   upgradeTimeout: 10000, // 10 seconds to upgrade to WebSocket
-  // Per-connection settings
-  connectTimeout: 45000, // 45 seconds to establish connection
+  // Connection settings
+  connectTimeout: 30000, // 30 seconds to establish connection
 });
 
 const PORT = 3030;

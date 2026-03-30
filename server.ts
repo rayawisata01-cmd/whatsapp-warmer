@@ -8,11 +8,16 @@
  * - Next.js API routes cannot handle WebSocket upgrade requests
  * - Socket.io requires WebSocket upgrade for reliable connections
  * - http-proxy-middleware provides proper WebSocket proxying
+ * 
+ * FIXED: Proper WebSocket upgrade handling to prevent:
+ * - HTTP 308 redirects
+ * - "Refused to set unsafe header 'Connection'" warnings
+ * - WebSocket upgrade failures
  */
 
 import { createServer } from 'http';
 import { parse } from 'url';
-import { createProxyMiddleware } from 'http-proxy-middleware';
+import { createProxyMiddleware, RequestHandler } from 'http-proxy-middleware';
 import next from 'next';
 
 const dev = process.env.NODE_ENV !== 'production';
@@ -25,7 +30,7 @@ const WHATSAPP_SERVICE_PORT = process.env.WHATSAPP_SERVICE_PORT || '3030';
 const WHATSAPP_SERVICE_URL = `http://${WHATSAPP_SERVICE_HOST}:${WHATSAPP_SERVICE_PORT}`;
 
 console.log('='.repeat(60));
-console.log('WhatsApp Warmer - Custom Server');
+console.log('WhatsApp Warmer - Custom Server (WebSocket Fixed)');
 console.log('='.repeat(60));
 console.log(`Environment: ${dev ? 'development' : 'production'}`);
 console.log(`Port: ${port}`);
@@ -36,12 +41,14 @@ console.log('='.repeat(60));
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
 
-// Create proxy middleware for Socket.io
+// Create proxy middleware for Socket.io with proper WebSocket handling
 const socketProxy = createProxyMiddleware({
   target: WHATSAPP_SERVICE_URL,
   changeOrigin: true,
   ws: true, // Enable WebSocket proxying
   secure: false,
+  xfwd: true, // Forward X-Forwarded headers
+  preserveHeaderKeyCase: true, // Preserve header case
   
   // Path rewrite: /api/socket.io -> /socket.io
   pathRewrite: (path: string) => {
@@ -50,31 +57,51 @@ const socketProxy = createProxyMiddleware({
     return newPath;
   },
   
-  // Socket.io specific headers
-  headers: {
-    'Connection': 'keep-alive',
+  // FIXED: Handle WebSocket upgrade headers properly
+  onProxyReq: (proxyReq, req, res) => {
+    // For WebSocket upgrade requests, ensure proper headers
+    if (req.headers.upgrade) {
+      console.log('[Proxy] WebSocket upgrade request detected');
+      proxyReq.setHeader('Upgrade', req.headers.upgrade);
+      proxyReq.setHeader('Connection', req.headers.connection || 'Upgrade');
+    }
+    
+    // Add forwarded headers for proper protocol detection
+    const proto = (req as any).protocol || 'http';
+    proxyReq.setHeader('X-Forwarded-Proto', proto);
+    proxyReq.setHeader('X-Forwarded-Host', req.headers.host || '');
   },
   
-  // Log proxy activity (only in development)
-  ...(dev && {
-    on: {
-      error: (err: Error) => {
-        console.error('[Proxy] Error:', err.message);
-      },
-      proxyReq: () => {
-        // console.log('[Proxy] Request:', req.method, req.url);
-      },
-      proxyRes: () => {
-        // console.log('[Proxy] Response:', proxyRes.statusCode, req.url);
-      },
-      open: () => {
-        console.log('[Proxy] WebSocket connection opened');
-      },
-      close: () => {
-        console.log('[Proxy] WebSocket connection closed');
-      },
-    },
-  }),
+  // FIXED: Handle response headers for WebSocket upgrade
+  onProxyRes: (proxyRes, req, res) => {
+    // For WebSocket upgrade responses, forward the headers
+    if (proxyRes.headers.upgrade) {
+      console.log('[Proxy] WebSocket upgrade response received');
+      res.setHeader('Upgrade', proxyRes.headers.upgrade);
+      res.setHeader('Connection', proxyRes.headers.connection || 'Upgrade');
+    }
+    
+    // Ensure no caching for Socket.io
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  },
+  
+  // Handle proxy errors gracefully
+  onError: (err, req, res) => {
+    console.error('[Proxy] Error:', err.message);
+    
+    if (!res.headersSent) {
+      // Check if it's a socket.io request
+      const isSocketIo = req.url?.includes('socket.io');
+      
+      if (isSocketIo) {
+        // Return Socket.io compatible error
+        (res as any).status(503).end('4{"message":"Service unavailable","code":503}');
+      } else {
+        (res as any).status(500).end('Proxy error');
+      }
+    }
+  },
 });
 
 // Create HTTP server
@@ -83,10 +110,9 @@ const server = createServer(async (req, res) => {
     const parsedUrl = parse(req.url!, true);
     const { pathname } = parsedUrl;
 
-    // Handle Socket.io requests
+    // Handle Socket.io polling requests
     if (pathname?.startsWith('/api/socket.io')) {
-      // @ts-ignore - Express-like middleware on Node.js HTTP server
-      socketProxy(req, res, (err: Error) => {
+      (socketProxy as RequestHandler)(req, res, (err: any) => {
         if (err) {
           console.error('[Server] Proxy error:', err);
           res.statusCode = 500;
@@ -115,12 +141,14 @@ server.on('upgrade', (req, socket, head) => {
   // Upgrade Socket.io WebSocket connections
   if (pathname?.startsWith('/api/socket.io')) {
     console.log('[Server] Upgrading WebSocket for Socket.io');
-    // @ts-ignore - WebSocket upgrade for proxy
-    socketProxy.upgrade(req, socket, head);
+    
+    // Use the proxy's upgrade method
+    (socketProxy as any).upgrade(req, socket, head);
     return;
   }
 
   // Let Next.js handle other WebSocket upgrades (if any)
+  // For now, destroy unknown upgrade requests
   socket.destroy();
 });
 
@@ -129,6 +157,7 @@ app.prepare().then(() => {
   server.listen(port, hostname, () => {
     console.log(`\n🚀 Server ready at http://${hostname}:${port}`);
     console.log(`📡 Socket.io proxy: /api/socket.io -> ${WHATSAPP_SERVICE_URL}/socket.io`);
+    console.log(`✅ WebSocket upgrade: ENABLED`);
     console.log('');
   });
 });

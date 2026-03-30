@@ -348,29 +348,29 @@ export default function Dashboard() {
       if (isConnectingRef.current) return;
       isConnectingRef.current = true;
       
-      // UPDATED: WebSocket support via custom Next.js server
-      // Custom server uses http-proxy-middleware for proper WebSocket proxying
+      // FIXED: WebSocket-first configuration
+      // - Use websocket as primary transport, polling as fallback
+      // - Removed extraHeaders with 'Connection' - causes "Refused to set unsafe header" warning
+      // - Custom server handles WebSocket upgrade properly
       const socketOptions: any = {
         path: '/api/socket.io',
-        transports: ['polling', 'websocket'], // Start with polling, upgrade to WebSocket
+        transports: ['websocket', 'polling'], // WebSocket first, fallback to polling
         upgrade: true, // Allow upgrade to WebSocket
         reconnection: true,
-        reconnectionAttempts: 10,
-        reconnectionDelay: 1000,
-        reconnectionDelayMax: 20000,
-        timeout: 60000, // Match server pingTimeout (60 seconds)
-        forceNew: false,
-        extraHeaders: {
-          'Connection': 'keep-alive',
-        },
+        reconnectionAttempts: 3, // Reduced to prevent spam
+        reconnectionDelay: 2000, // Increased from 1000
+        reconnectionDelayMax: 10000,
+        timeout: 10000, // Reduced from 60s - faster fail for better UX
+        forceNew: true, // Force new connection
+        // DO NOT add extraHeaders with 'Connection' - browser blocks it as unsafe
       };
 
       const socketUrl = window.location.origin;
-      console.log('[WS] Connecting via custom server (WebSocket enabled)...', { 
+      console.log('[WS] Connecting via custom server (WebSocket first)...', { 
         url: socketUrl, 
         path: '/api/socket.io',
-        timeout: '60s',
-        transports: ['polling', 'websocket']
+        timeout: '10s',
+        transports: ['websocket', 'polling']
       });
       
       socketRef.current = io(socketUrl, socketOptions);
