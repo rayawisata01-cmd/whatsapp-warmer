@@ -1,0 +1,57 @@
+:81 {
+        # Socket.io with WebSocket support - MUST be first for proper WebSocket upgrade
+        @socketio_websocket {
+                path /socket.io*
+                query XTransformPort=*
+                header Connection *Upgrade*
+                header Upgrade *websocket*
+        }
+        handle @socketio_websocket {
+                reverse_proxy localhost:{query.XTransformPort} {
+                        header_up Host {host}
+                        header_up X-Forwarded-For {remote_host}
+                        header_up X-Forwarded-Proto {scheme}
+                        header_up X-Real-IP {remote_host}
+                        # WebSocket support
+                        header_up Connection {>Connection}
+                        header_up Upgrade {>Upgrade}
+                }
+        }
+
+        # Socket.io polling fallback
+        @socketio_port {
+                path /socket.io*
+                query XTransformPort=*
+        }
+        handle @socketio_port {
+                reverse_proxy localhost:{query.XTransformPort} {
+                        header_up Host {host}
+                        header_up X-Forwarded-For {remote_host}
+                        header_up X-Forwarded-Proto {scheme}
+                        header_up X-Real-IP {remote_host}
+                }
+        }
+
+        # Handle other requests with XTransformPort
+        @transform_port_query {
+                query XTransformPort=*
+        }
+        handle @transform_port_query {
+                reverse_proxy localhost:{query.XTransformPort} {
+                        header_up Host {host}
+                        header_up X-Forwarded-For {remote_host}
+                        header_up X-Forwarded-Proto {scheme}
+                        header_up X-Real-IP {remote_host}
+                }
+        }
+
+        # Default to Next.js
+        handle {
+                reverse_proxy localhost:3000 {
+                        header_up Host {host}
+                        header_up X-Forwarded-For {remote_host}
+                        header_up X-Forwarded-Proto {scheme}
+                        header_up X-Real-IP {remote_host}
+                }
+        }
+}

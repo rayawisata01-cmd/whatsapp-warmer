@@ -1,0 +1,38 @@
+[
+  {
+    "id": "vps-1",
+    "name": "VPS Jakarta 1",
+    "host": "localhost",
+    "port": 3031,
+    "status": "offline",
+    "maxAccounts": 20,
+    "region": "Jakarta"
+  },
+  {
+    "id": "vps-2",
+    "name": "VPS Jakarta 2",
+    "host": "localhost",
+    "port": 3032,
+    "status": "offline",
+    "maxAccounts": 20,
+    "region": "Jakarta"
+  },
+  {
+    "id": "vps-4",
+    "name": "VPS Singapore 2",
+    "host": "localhost",
+    "port": 3034,
+    "status": "offline",
+    "maxAccounts": 20,
+    "region": "Singapore"
+  },
+  {
+    "id": "vps-5",
+    "name": "VPS Bandung",
+    "host": "localhost",
+    "port": 3035,
+    "status": "offline",
+    "maxAccounts": 20,
+    "region": "Bandung"
+  }
+]

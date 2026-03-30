@@ -1,0 +1,151 @@
+message,timestamp,severity,tags,attributes
+,2026-03-17T04:28:29.365346158Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""level"":""info""}"
+[35m[Region: us-west1][0m,2026-03-17T04:28:29.724560862Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""level"":""info""}"
+[35m=========================,2026-03-17T04:28:29.730663277Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""level"":""info""}"
+Using Detected Dockerfile,2026-03-17T04:28:29.730708829Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""level"":""info""}"
+=========================,2026-03-17T04:28:29.730714829Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""level"":""info""}"
+[0m,2026-03-17T04:28:29.730719714Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""level"":""info""}"
+context: rk9f-Kdes,2026-03-17T04:28:29.730734152Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""level"":""info""}"
+[internal] load build definition from Dockerfile,2026-03-17T04:28:31.595578750Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""digest"":""sha256:5f1f55a07f184253d4c78be466fc84ed586fa0dec12bde55f18d2330094f361c"",""level"":""info"",""source"":""buildkit"",""type"":""vertex""}"
+[internal] load build definition from Dockerfile,2026-03-17T04:28:31.595633714Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""completed"":""2026-03-17T04:28:31.591594466Z"",""digest"":""sha256:5f1f55a07f184253d4c78be466fc84ed586fa0dec12bde55f18d2330094f361c"",""level"":""info"",""source"":""buildkit"",""started"":""2026-03-17T04:28:31.591551675Z"",""type"":""vertex""}"
+[internal] load build definition from Dockerfile,2026-03-17T04:28:31.595649422Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""digest"":""sha256:5f1f55a07f184253d4c78be466fc84ed586fa0dec12bde55f18d2330094f361c"",""level"":""info"",""source"":""buildkit"",""started"":""2026-03-17T04:28:31.591748923Z"",""type"":""vertex""}"
+[internal] load build definition from Dockerfile,2026-03-17T04:28:31.667466455Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""completed"":""2026-03-17T04:28:31.663583979Z"",""digest"":""sha256:5f1f55a07f184253d4c78be466fc84ed586fa0dec12bde55f18d2330094f361c"",""level"":""info"",""source"":""buildkit"",""started"":""2026-03-17T04:28:31.591748923Z"",""type"":""vertex""}"
+[internal] load metadata for docker.io/oven/bun:1-alpine,2026-03-17T04:28:31.677551553Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""digest"":""sha256:a9b44f6d878c27ae9ef8c9e5bb81ed30d3aba518fb1b70a681c613c1743fdfde"",""level"":""info"",""source"":""buildkit"",""started"":""2026-03-17T04:28:31.673666913Z"",""type"":""vertex""}"
+[auth] oven/bun:pull token for registry-1.docker.io,2026-03-17T04:28:31.682322113Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""digest"":""sha256:f93afae840c2187a7c738c7702fac72c820f0e2d6c2a534304f437a0ab13c121"",""level"":""info"",""source"":""buildkit"",""started"":""2026-03-17T04:28:31.682135001Z"",""type"":""vertex""}"
+[auth] oven/bun:pull token for registry-1.docker.io,2026-03-17T04:28:31.682381871Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""completed"":""2026-03-17T04:28:31.682158266Z"",""digest"":""sha256:f93afae840c2187a7c738c7702fac72c820f0e2d6c2a534304f437a0ab13c121"",""level"":""info"",""source"":""buildkit"",""started"":""2026-03-17T04:28:31.682135001Z"",""type"":""vertex""}"
+[internal] load metadata for docker.io/oven/bun:1-alpine,2026-03-17T04:28:32.405730532Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""completed"":""2026-03-17T04:28:32.401657707Z"",""digest"":""sha256:a9b44f6d878c27ae9ef8c9e5bb81ed30d3aba518fb1b70a681c613c1743fdfde"",""level"":""info"",""source"":""buildkit"",""started"":""2026-03-17T04:28:31.673666913Z"",""type"":""vertex""}"
+[internal] load .dockerignore,2026-03-17T04:28:32.406063665Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""digest"":""sha256:710909b024d939433df9bd922f6c6f45d7c2ae0cdaad96178fd0cdd2d0755505"",""level"":""info"",""source"":""buildkit"",""type"":""vertex""}"
+[internal] load .dockerignore,2026-03-17T04:28:32.406083063Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""completed"":""2026-03-17T04:28:32.402390429Z"",""digest"":""sha256:710909b024d939433df9bd922f6c6f45d7c2ae0cdaad96178fd0cdd2d0755505"",""level"":""info"",""source"":""buildkit"",""started"":""2026-03-17T04:28:32.402347386Z"",""type"":""vertex""}"
+[internal] load .dockerignore,2026-03-17T04:28:32.406100793Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""digest"":""sha256:710909b024d939433df9bd922f6c6f45d7c2ae0cdaad96178fd0cdd2d0755505"",""level"":""info"",""source"":""buildkit"",""started"":""2026-03-17T04:28:32.402519681Z"",""type"":""vertex""}"
+[internal] load .dockerignore,2026-03-17T04:28:34.628086896Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""completed"":""2026-03-17T04:28:34.62424497Z"",""digest"":""sha256:710909b024d939433df9bd922f6c6f45d7c2ae0cdaad96178fd0cdd2d0755505"",""level"":""info"",""source"":""buildkit"",""started"":""2026-03-17T04:28:32.402519681Z"",""type"":""vertex""}"
+[5/7] RUN bun install,2026-03-17T04:28:34.637178974Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""digest"":""sha256:6ab1cf6aa658696501323983321fcf1177bdf8efeab401138843aa9994e640f6"",""inputs"":[""sha256:9e1646b7ef46e6641a3b6e2e0cf440548f5583444f94e23b8f31c005d0124a1b""],""level"":""info"",""source"":""buildkit"",""type"":""vertex""}"
+[4/7] COPY . .,2026-03-17T04:28:34.637245021Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""digest"":""sha256:9e1646b7ef46e6641a3b6e2e0cf440548f5583444f94e23b8f31c005d0124a1b"",""inputs"":[""sha256:33e149338a5a087dc3254b86dfa6c5ad51de362fd141cc01ad4dcd2ab5458582"",""sha256:bfb4dfd14a6e761c45066052daca19cfcb1a17e4fd8d5ad11721023010ac3204""],""level"":""info"",""source"":""buildkit"",""type"":""vertex""}"
+[internal] load build context,2026-03-17T04:28:34.637261032Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""digest"":""sha256:bfb4dfd14a6e761c45066052daca19cfcb1a17e4fd8d5ad11721023010ac3204"",""level"":""info"",""source"":""buildkit"",""type"":""vertex""}"
+[3/7] RUN apk add --no-cache     chromium     nss     freetype     harfbuzz     ca-certificates     ttf-freefont,2026-03-17T04:28:34.637275335Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""digest"":""sha256:33e149338a5a087dc3254b86dfa6c5ad51de362fd141cc01ad4dcd2ab5458582"",""inputs"":[""sha256:940dce241bc33bdf8eec1556bfc7d55a721917f1c0cf797e2d7211ac019ad7bd""],""level"":""info"",""source"":""buildkit"",""type"":""vertex""}"
+[2/7] WORKDIR /app,2026-03-17T04:28:34.637290129Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""digest"":""sha256:940dce241bc33bdf8eec1556bfc7d55a721917f1c0cf797e2d7211ac019ad7bd"",""inputs"":[""sha256:dbdfa941d422bd853c14b48542aef8ae88567cc928b1d2bc9fc2f67e9b112f48""],""level"":""info"",""source"":""buildkit"",""type"":""vertex""}"
+[1/7] FROM docker.io/oven/bun:1-alpine@sha256:32f1fcccb1523960b254c4f80973bee1a910d60be000a45c20c9129a1efcffee,2026-03-17T04:28:34.637305160Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""digest"":""sha256:dbdfa941d422bd853c14b48542aef8ae88567cc928b1d2bc9fc2f67e9b112f48"",""level"":""info"",""source"":""buildkit"",""type"":""vertex""}"
+[7/7] RUN bun run build,2026-03-17T04:28:34.637331369Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""digest"":""sha256:e0e56abca9392c4ccb7915c295becdce24a90c7e65679a63d5d3d88594a2bffd"",""inputs"":[""sha256:4b4f46f6a1dc13b534109ae1f2528ea0e00f99c8b76679c04df900cb156d0a61""],""level"":""info"",""source"":""buildkit"",""type"":""vertex""}"
+[6/7] RUN bun run db:push,2026-03-17T04:28:34.637343747Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""digest"":""sha256:4b4f46f6a1dc13b534109ae1f2528ea0e00f99c8b76679c04df900cb156d0a61"",""inputs"":[""sha256:6ab1cf6aa658696501323983321fcf1177bdf8efeab401138843aa9994e640f6""],""level"":""info"",""source"":""buildkit"",""type"":""vertex""}"
+[1/7] FROM docker.io/oven/bun:1-alpine@sha256:32f1fcccb1523960b254c4f80973bee1a910d60be000a45c20c9129a1efcffee,2026-03-17T04:28:34.637364812Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""digest"":""sha256:dbdfa941d422bd853c14b48542aef8ae88567cc928b1d2bc9fc2f67e9b112f48"",""level"":""info"",""source"":""buildkit"",""started"":""2026-03-17T04:28:34.633582049Z"",""type"":""vertex""}"
+[internal] load build context,2026-03-17T04:28:34.637381970Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""completed"":""2026-03-17T04:28:34.63371114Z"",""digest"":""sha256:bfb4dfd14a6e761c45066052daca19cfcb1a17e4fd8d5ad11721023010ac3204"",""level"":""info"",""source"":""buildkit"",""started"":""2026-03-17T04:28:34.633660337Z"",""type"":""vertex""}"
+[internal] load build context,2026-03-17T04:28:34.653597779Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""digest"":""sha256:bfb4dfd14a6e761c45066052daca19cfcb1a17e4fd8d5ad11721023010ac3204"",""level"":""info"",""source"":""buildkit"",""started"":""2026-03-17T04:28:34.64990003Z"",""type"":""vertex""}"
+[internal] load build context,2026-03-17T04:28:34.731427280Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""completed"":""2026-03-17T04:28:34.727578425Z"",""digest"":""sha256:bfb4dfd14a6e761c45066052daca19cfcb1a17e4fd8d5ad11721023010ac3204"",""level"":""info"",""source"":""buildkit"",""started"":""2026-03-17T04:28:34.64990003Z"",""type"":""vertex""}"
+[2/7] WORKDIR /app,2026-03-17T04:28:34.742065707Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""cached"":true,""completed"":""2026-03-17T04:28:34.738105176Z"",""digest"":""sha256:940dce241bc33bdf8eec1556bfc7d55a721917f1c0cf797e2d7211ac019ad7bd"",""inputs"":[""sha256:dbdfa941d422bd853c14b48542aef8ae88567cc928b1d2bc9fc2f67e9b112f48""],""level"":""info"",""source"":""buildkit"",""started"":""2026-03-17T04:28:34.738105176Z"",""type"":""vertex""}"
+[3/7] RUN apk add --no-cache     chromium     nss     freetype     harfbuzz     ca-certificates     ttf-freefont,2026-03-17T04:28:34.742122699Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""cached"":true,""completed"":""2026-03-17T04:28:34.738105176Z"",""digest"":""sha256:33e149338a5a087dc3254b86dfa6c5ad51de362fd141cc01ad4dcd2ab5458582"",""inputs"":[""sha256:940dce241bc33bdf8eec1556bfc7d55a721917f1c0cf797e2d7211ac019ad7bd""],""level"":""info"",""source"":""buildkit"",""started"":""2026-03-17T04:28:34.738105176Z"",""type"":""vertex""}"
+[4/7] COPY . .,2026-03-17T04:28:34.742148437Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""cached"":true,""completed"":""2026-03-17T04:28:34.738160143Z"",""digest"":""sha256:9e1646b7ef46e6641a3b6e2e0cf440548f5583444f94e23b8f31c005d0124a1b"",""inputs"":[""sha256:33e149338a5a087dc3254b86dfa6c5ad51de362fd141cc01ad4dcd2ab5458582"",""sha256:bfb4dfd14a6e761c45066052daca19cfcb1a17e4fd8d5ad11721023010ac3204""],""level"":""info"",""source"":""buildkit"",""started"":""2026-03-17T04:28:34.738105176Z"",""type"":""vertex""}"
+[5/7] RUN bun install,2026-03-17T04:28:34.742173294Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""digest"":""sha256:6ab1cf6aa658696501323983321fcf1177bdf8efeab401138843aa9994e640f6"",""inputs"":[""sha256:9e1646b7ef46e6641a3b6e2e0cf440548f5583444f94e23b8f31c005d0124a1b""],""level"":""info"",""source"":""buildkit"",""started"":""2026-03-17T04:28:34.738255393Z"",""type"":""vertex""}"
+"bun install v1.3.10 (30e609e0)
+",2026-03-17T04:28:35.147714666Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""level"":""info"",""source"":""buildkit"",""stream"":1,""timestamp"":""2026-03-17T04:28:35.147714666Z"",""type"":""log"",""vertex"":""sha256:6ab1cf6aa658696501323983321fcf1177bdf8efeab401138843aa9994e640f6""}"
+"
++ @tailwindcss/postcss@4.2.1
++ @types/react@19.2.14
++ @types/react-dom@19.2.3
++ bun-types@1.3.10
++ eslint@9.39.4
++ eslint-config-next@16.1.6
++ tailwindcss@4.2.1
++ tw-animate-css@1.4.0
++ typescript@5.9.3
++ @dnd-kit/core@6.3.1
++ @dnd-kit/sortable@10.0.0
++ @dnd-kit/utilities@3.2.2
++ @hookform/resolvers@5.2.2
++ @mdxeditor/editor@3.52.4
++ @prisma/client@6.19.2
++ @radix-ui/react-accordion@1.2.12
++ @radix-ui/react-alert-dialog@1.1.15
++ @radix-ui/react-aspect-ratio@1.1.8
++ @radix-ui/react-avatar@1.1.11
++ @radix-ui/react-checkbox@1.3.3
++ @radix-ui/react-collapsible@1.1.12
++ @radix-ui/react-context-menu@2.2.16
++ @radix-ui/react-dialog@1.1.15
++ @radix-ui/react-dropdown-menu@2.1.16
++ @radix-ui/react-hover-card@1.1.15
++ @radix-ui/react-label@2.1.8
++ @radix-ui/react-menubar@1.1.16
++ @radix-ui/react-navigation-menu@1.2.14
++ @radix-ui/react-popover@1.1.15
++ @radix-ui/react-progress@1.1.8
++ @radix-ui/react-radio-group@1.3.8
++ @radix-ui/react-scroll-area@1.2.10
++ @radix-ui/react-select@2.2.6
++ @radix-ui/react-separator@1.1.8
++ @radix-ui/react-slider@1.3.6
++ @radix-ui/react-slot@1.2.4
++ @radix-ui/react-switch@1.2.6
++ @radix-ui/react-tabs@1.1.13
++ @radix-ui/react-toast@1.2.15
++ @radix-ui/react-toggle@1.1.10
++ @radix-ui/react-toggle-group@1.1.11
++ @radix-ui/react-tooltip@1.2.8
++ @radix-ui/react-visually-hidden@1.2.4
++ @reactuses/core@6.1.11
++ @tanstack/react-query@5.90.21
++ @tanstack/react-table@8.21.3
++ class-variance-authority@0.7.1
++ clsx@2.1.1
++ cmdk@1.1.1
++ date-fns@4.1.0
++ embla-carousel-react@8.6.0
++ framer-motion@12.35.2
++ input-otp@1.4.2
++ lucide-react@0.525.0
++ next@16.1.6
++ next-auth@4.24.13
++ next-intl@4.8.3
++ next-themes@0.4.6
++ prisma@6.19.2
++ react@19.2.4
++ react-day-picker@9.14.0
++ react-dom@19.2.4
++ react-hook-form@7.71.2
++ react-markdown@10.1.0
++ react-resizable-panels@3.0.6
++ react-syntax-highlighter@15.6.6
++ recharts@2.15.4
++ sharp@0.34.5
++ socket.io-client@4.8.3
++ sonner@2.0.7
++ tailwind-merge@3.5.0
++ tailwindcss-animate@1.0.7
++ uuid@11.1.0
++ vaul@1.1.2
++ z-ai-web-dev-sdk@0.0.17
++ zod@4.3.6
++ zustand@5.0.11
+
+839 packages installed [41.81s]
+",2026-03-17T04:29:16.959293603Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""level"":""info"",""source"":""buildkit"",""stream"":1,""timestamp"":""2026-03-17T04:29:16.959293603Z"",""type"":""log"",""vertex"":""sha256:6ab1cf6aa658696501323983321fcf1177bdf8efeab401138843aa9994e640f6""}"
+[5/7] RUN bun install,2026-03-17T04:29:30.784106639Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""completed"":""2026-03-17T04:29:30.780116432Z"",""digest"":""sha256:6ab1cf6aa658696501323983321fcf1177bdf8efeab401138843aa9994e640f6"",""inputs"":[""sha256:9e1646b7ef46e6641a3b6e2e0cf440548f5583444f94e23b8f31c005d0124a1b""],""level"":""info"",""source"":""buildkit"",""started"":""2026-03-17T04:28:34.738255393Z"",""type"":""vertex""}"
+[6/7] RUN bun run db:push,2026-03-17T04:29:30.792679054Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""digest"":""sha256:4b4f46f6a1dc13b534109ae1f2528ea0e00f99c8b76679c04df900cb156d0a61"",""inputs"":[""sha256:6ab1cf6aa658696501323983321fcf1177bdf8efeab401138843aa9994e640f6""],""level"":""info"",""source"":""buildkit"",""started"":""2026-03-17T04:29:30.788794637Z"",""type"":""vertex""}"
+"$ prisma db push
+",2026-03-17T04:29:31.80695672Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""level"":""info"",""source"":""buildkit"",""stream"":2,""timestamp"":""2026-03-17T04:29:31.80695672Z"",""type"":""log"",""vertex"":""sha256:4b4f46f6a1dc13b534109ae1f2528ea0e00f99c8b76679c04df900cb156d0a61""}"
+"Prisma schema loaded from prisma/schema.prisma
+",2026-03-17T04:29:34.893885037Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""level"":""info"",""source"":""buildkit"",""stream"":1,""timestamp"":""2026-03-17T04:29:34.893885037Z"",""type"":""log"",""vertex"":""sha256:4b4f46f6a1dc13b534109ae1f2528ea0e00f99c8b76679c04df900cb156d0a61""}"
+"Error: Prisma schema validation - (get-config wasm)
+Error code: P1012
+error: Environment variable not found: DATABASE_URL.
+  -->  prisma/schema.prisma:13
+   | 
+12 |   provider = ""sqlite""
+13 |   url      = env(""DATABASE_URL"")
+   | 
+
+Validation Error Count: 1
+[Context: getConfig]
+
+Prisma CLI Version : 6.19.2
+",2026-03-17T04:29:34.900011271Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""level"":""info"",""source"":""buildkit"",""stream"":2,""timestamp"":""2026-03-17T04:29:34.900011271Z"",""type"":""log"",""vertex"":""sha256:4b4f46f6a1dc13b534109ae1f2528ea0e00f99c8b76679c04df900cb156d0a61""}"
+"error: script ""db:push"" exited with code 1
+",2026-03-17T04:29:34.930403914Z,info,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""level"":""info"",""source"":""buildkit"",""stream"":2,""timestamp"":""2026-03-17T04:29:34.930403914Z"",""type"":""log"",""vertex"":""sha256:4b4f46f6a1dc13b534109ae1f2528ea0e00f99c8b76679c04df900cb156d0a61""}"
+[6/7] RUN bun run db:push,2026-03-17T04:29:35.423973849Z,error,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""completed"":""2026-03-17T04:29:35.4196911Z"",""digest"":""sha256:4b4f46f6a1dc13b534109ae1f2528ea0e00f99c8b76679c04df900cb156d0a61"",""error"":""process \""/bin/sh -c bun run db:push\"" did not complete successfully: exit code: 1"",""inputs"":[""sha256:6ab1cf6aa658696501323983321fcf1177bdf8efeab401138843aa9994e640f6""],""level"":""error"",""source"":""buildkit"",""started"":""2026-03-17T04:29:30.788794637Z"",""type"":""vertex""}"
+Dockerfile:23,2026-03-17T04:29:35.466520609Z,error,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""level"":""error""}"
+-------------------,2026-03-17T04:29:35.466991287Z,error,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""level"":""error""}"
+21 |,2026-03-17T04:29:35.467023428Z,error,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""level"":""error""}"
+22 |     # Generate Prisma client,2026-03-17T04:29:35.467032100Z,error,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""level"":""error""}"
+23 | >>> RUN bun run db:push,2026-03-17T04:29:35.467039702Z,error,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""level"":""error""}"
+24 |,2026-03-17T04:29:35.467048280Z,error,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""level"":""error""}"
+25 |     # Build Next.js,2026-03-17T04:29:35.467055773Z,error,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""level"":""error""}"
+-------------------,2026-03-17T04:29:35.467063148Z,error,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""level"":""error""}"
+"ERROR: failed to build: failed to solve: process ""/bin/sh -c bun run db:push"" did not complete successfully: exit code: 1",2026-03-17T04:29:35.467119535Z,error,"{""serviceId"":""7b76cee7-cc06-4c42-9fcb-8d9e8bf6eaed"",""deploymentId"":null,""deploymentInstanceId"":null}","{""level"":""error""}"
