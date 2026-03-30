@@ -6,18 +6,13 @@ echo "Starting WhatsApp Warmer Service"
 echo "Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
 echo "=========================================="
 
-# Ensure data directory exists
-mkdir -p /app/data
+# Ensure directories exist
+mkdir -p /app/data /app/sessions /app/backups
 
 # Run database migrations
 echo "Running Prisma migrations..."
-bunx prisma db push --skip-generate
-
-# Create symlinks for Prisma in WhatsApp service
-echo "Setting up Prisma symlinks..."
-mkdir -p /app/mini-services/whatsapp-service/node_modules/@prisma
-ln -sf /app/node_modules/@prisma/client /app/mini-services/whatsapp-service/node_modules/@prisma/client
-ln -sf /app/node_modules/.prisma /app/mini-services/whatsapp-service/node_modules/.prisma
+cd /app
+bunx prisma db push --skip-generate || true
 
 # ==================== HELPER FUNCTIONS ====================
 
@@ -31,7 +26,7 @@ wait_for_port() {
     local attempt=1
     
     while [ $attempt -le $max_attempts ]; do
-        if nc -z -w2 "$host" "$port" 2>/dev/null; then
+        if nc -z -w2 "$host" "$port" 2>/dev/null 2>&1; then
             echo "  ✅ Port $port is open!"
             return 0
         fi
@@ -77,58 +72,48 @@ echo "=========================================="
 echo "Step 1: Starting WhatsApp Service"
 echo "=========================================="
 
-echo "Working directory: /app/mini-services/whatsapp-service"
-cd /app/mini-services/whatsapp-service
+echo "Working directory: /app/whatsapp-service"
+cd /app/whatsapp-service
 
-if ! command -v tsx &> /dev/null; then
-    echo "⚠️ tsx not found, installing..."
-    npm install -g tsx
-fi
-
-echo "Launching WhatsApp service (tsx index.ts)..."
-if command -v unbuffer &> /dev/null; then
-    unbuffer npx tsx index.ts > /app/data/whatsapp-service.log 2>&1 &
-elif command -v stdbuf &> /dev/null; then
-    stdbuf -oL -eL npx tsx index.ts > /app/data/whatsapp-service.log 2>&1 &
-else
-    npx tsx index.ts > /app/data/whatsapp-service.log 2>&1 &
-fi
+echo "Launching WhatsApp service..."
+bun index.ts > /app/data/whatsapp-service.log 2>&1 &
 WA_PID=$!
 echo "WhatsApp Service PID: $WA_PID"
 
 echo ""
 echo "Waiting for WhatsApp service to be fully ready..."
 
-wait_for_port "localhost" 3030 60 2 || true
-
-WA_HEALTH_RESULT=0
-wait_for_health "WhatsApp Service" "http://localhost:3030/health" 30 2 || WA_HEALTH_RESULT=$?
-
-if [ $WA_HEALTH_RESULT -ne 0 ]; then
-    echo "⚠️ WhatsApp service health check failed, checking logs..."
-    if [ -f /app/data/whatsapp-service.log ]; then
-        echo "=== Recent WhatsApp Service Logs ==="
-        tail -50 /app/data/whatsapp-service.log
-        echo "=== End Logs ==="
+# Wait for port 3030
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
+    if nc -z localhost 3030 2>/dev/null; then
+        echo "  ✅ Port 3030 is open!"
+        break
     fi
-    echo ""
-    echo "⚠️ Continuing anyway - service may still be initializing..."
-fi
+    echo "  ⏳ Waiting for port 3030... ($i/30)"
+    sleep 2
+done
 
-echo "Giving WhatsApp service extra time to stabilize..."
-sleep 5
+# Wait for health
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+    if curl -s -f "http://localhost:3030/health" > /dev/null 2>&1; then
+        echo "  ✅ WhatsApp service is healthy!"
+        break
+    fi
+    echo "  ⏳ Waiting for health check... ($i/15)"
+    sleep 2
+done
 
 if ! kill -0 $WA_PID 2>/dev/null; then
     echo "❌ WhatsApp service crashed during startup!"
     if [ -f /app/data/whatsapp-service.log ]; then
         echo "=== WhatsApp Service Log ==="
-        cat /app/data/whatsapp-service.log
+        tail -100 /app/data/whatsapp-service.log
         echo "=== End Log ==="
     fi
     exit 1
 fi
 
-echo "✅ WhatsApp service is running and healthy!"
+echo "✅ WhatsApp service is running!"
 
 # ==================== START NEXT.JS ====================
 
@@ -140,49 +125,19 @@ echo "=========================================="
 cd /app
 
 echo "Starting Next.js server..."
-bun .next/standalone/server.js &
+node server.js &
 NEXTJS_PID=$!
 echo "Next.js PID: $NEXTJS_PID"
 
-wait_for_port "localhost" 3000 30 1 || true
-
-echo "Waiting for Next.js routes to initialize..."
-sleep 5
-
-wait_for_health "Next.js" "http://localhost:3000/api/wa/health" 15 2 || true
-
-# ==================== FINAL VERIFICATION ====================
-
-echo ""
-echo "=========================================="
-echo "Step 3: Verifying Service Connectivity"
-echo "=========================================="
-
-# Test Socket.io proxy - IMPORTANT: Use URL WITHOUT trailing slash
-# Socket.io endpoint is /api/socket.io (no trailing slash)
-echo "Testing Socket.io proxy connectivity..."
-
-# Test 1: Direct WhatsApp service (bypass Next.js proxy)
-echo "Test 1: Direct WhatsApp service (port 3030)..."
-DIRECT_RESULT=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:3030/socket.io/?EIO=4&transport=polling" 2>/dev/null || echo "000")
-echo "  Direct WA service response: HTTP $DIRECT_RESULT"
-
-# Test 2: Via Next.js proxy - NO trailing slash!
-echo "Test 2: Via Next.js proxy (port 3000)..."
-PROXY_RESULT=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:3000/api/socket.io?EIO=4&transport=polling" 2>/dev/null || echo "000")
-echo "  Proxy response: HTTP $PROXY_RESULT"
-
-# Acceptable responses: 200 (OK) or 400 (Bad Request - normal for missing session)
-if [ "$PROXY_RESULT" = "200" ] || [ "$PROXY_RESULT" = "400" ]; then
-    echo "✅ Socket.io proxy is working correctly (HTTP $PROXY_RESULT)"
-elif [ "$PROXY_RESULT" = "308" ] || [ "$PROXY_RESULT" = "301" ] || [ "$PROXY_RESULT" = "302" ] || [ "$PROXY_RESULT" = "307" ]; then
-    echo "❌ CRITICAL: Proxy returned redirect ($PROXY_RESULT)! This will break Socket.io!"
-    echo "   Checking redirect location..."
-    REDIRECT_LOCATION=$(curl -s -I "http://localhost:3000/api/socket.io?EIO=4&transport=polling" 2>/dev/null | grep -i "location:" | head -1)
-    echo "   Redirect to: $REDIRECT_LOCATION"
-else
-    echo "⚠️ Socket.io proxy returned HTTP $PROXY_RESULT (unexpected)"
-fi
+# Wait for port 3000
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    if nc -z localhost 3000 2>/dev/null; then
+        echo "  ✅ Port 3000 is open!"
+        break
+    fi
+    echo "  ⏳ Waiting for port 3000... ($i/20)"
+    sleep 2
+done
 
 # ==================== FINAL STATUS ====================
 
@@ -199,22 +154,29 @@ echo ""
 handle_exit() {
     echo ""
     echo "Received shutdown signal..."
-    
-    if ! kill -0 $NEXTJS_PID 2>/dev/null; then
-        echo "Next.js process has exited"
-    fi
-    if ! kill -0 $WA_PID 2>/dev/null; then
-        echo "WhatsApp service process has exited"
-        if [ -f /app/data/whatsapp-service.log ]; then
-            echo "=== Last WhatsApp Service Logs ==="
-            tail -30 /app/data/whatsapp-service.log
-        fi
-    fi
-    
     kill $NEXTJS_PID $WA_PID 2>/dev/null || true
     exit 0
 }
 
 trap handle_exit SIGTERM SIGINT
 
-wait
+# Keep script running and monitor processes
+while true; do
+    if ! kill -0 $WA_PID 2>/dev/null; then
+        echo "❌ WhatsApp service died! Restarting..."
+        cd /app/whatsapp-service
+        bun index.ts > /app/data/whatsapp-service.log 2>&1 &
+        WA_PID=$!
+        echo "WhatsApp Service restarted with PID: $WA_PID"
+    fi
+    
+    if ! kill -0 $NEXTJS_PID 2>/dev/null; then
+        echo "❌ Next.js died! Restarting..."
+        cd /app
+        node server.js &
+        NEXTJS_PID=$!
+        echo "Next.js restarted with PID: $NEXTJS_PID"
+    fi
+    
+    sleep 10
+done
