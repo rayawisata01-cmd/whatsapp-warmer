@@ -9,6 +9,10 @@ echo "=========================================="
 # Ensure directories exist
 mkdir -p /app/data /app/sessions /app/backups
 
+# Set DATABASE_URL explicitly for SQLite
+export DATABASE_URL="file:/app/data/whatsapp.db"
+echo "DATABASE_URL set to: $DATABASE_URL"
+
 # Run database migrations
 echo "Running Prisma migrations..."
 cd /app
