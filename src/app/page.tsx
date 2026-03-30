@@ -357,19 +357,20 @@ export default function Dashboard() {
         transports: ['websocket', 'polling'], // WebSocket first, fallback to polling
         upgrade: true, // Allow upgrade to WebSocket
         reconnection: true,
-        reconnectionAttempts: 3, // Reduced to prevent spam
-        reconnectionDelay: 2000, // Increased from 1000
-        reconnectionDelayMax: 10000,
-        timeout: 10000, // Reduced from 60s - faster fail for better UX
+        reconnectionAttempts: 7, // Standard retry count
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        timeout: 25000, // 25 seconds - reasonable timeout
         forceNew: true, // Force new connection
+        autoConnect: true,
         // DO NOT add extraHeaders with 'Connection' - browser blocks it as unsafe
       };
 
       const socketUrl = window.location.origin;
-      console.log('[WS] Connecting via custom server (WebSocket first)...', { 
+      console.log('[Socket.io] Connecting...', { 
         url: socketUrl, 
         path: '/api/socket.io',
-        timeout: '10s',
+        timeout: '25s',
         transports: ['websocket', 'polling']
       });
       
@@ -378,21 +379,28 @@ export default function Dashboard() {
       isConnectingRef.current = false;
 
       socket.on('connect', () => {
-        console.log('[WS] Connected to WhatsApp service', { id: socket.id });
+        // Log the transport being used
+        const transport = socket.io.engine.transport.name;
+        console.log(`[Socket.io] Connected! ID: ${socket.id} | Transport: ${transport}`);
         setConnected(true);
         // FIX: Reset reconnection attempts on successful connect
         reconnectAttemptsRef.current = 0;
       });
 
+      // Log when transport upgrades (e.g., from polling to websocket)
+      socket.io.engine.on('upgrade', (transport: any) => {
+        console.log(`[Socket.io] Transport upgraded to: ${transport.name}`);
+      });
+
       socket.on('connect_error', (error: Error) => {
-        console.error('[WS] Connection error:', error.message);
+        console.warn('[Socket.io] Connection error:', error.message);
         setConnected(false);
         // Schedule manual reconnect with exponential backoff
         scheduleReconnect();
       });
 
       socket.on('disconnect', (reason) => {
-        console.log('[WS] Disconnected from WhatsApp service, reason:', reason);
+        console.log('[Socket.io] Disconnected, reason:', reason);
         setConnected(false);
         
         // Socket.io will auto-reconnect for most reasons

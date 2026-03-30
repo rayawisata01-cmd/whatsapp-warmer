@@ -1,57 +1,104 @@
+# Caddyfile for WhatsApp Warmer
+# Railway uses its own edge proxy, but this file is used for local development
+# and can be used as reference for Railway configuration
+
 :81 {
-        # Socket.io with WebSocket support - MUST be first for proper WebSocket upgrade
-        @socketio_websocket {
-                path /socket.io*
-                query XTransformPort=*
-                header Connection *Upgrade*
-                header Upgrade *websocket*
-        }
-        handle @socketio_websocket {
-                reverse_proxy localhost:{query.XTransformPort} {
-                        header_up Host {host}
-                        header_up X-Forwarded-For {remote_host}
-                        header_up X-Forwarded-Proto {scheme}
-                        header_up X-Real-IP {remote_host}
-                        # WebSocket support
-                        header_up Connection {>Connection}
-                        header_up Upgrade {>Upgrade}
-                }
-        }
+	# ========================================
+	# SOCKET.IO - WEBSOCKET PRIORITY
+	# ========================================
+	# CRITICAL: Socket.io needs proper WebSocket upgrade handling
+	# Must match both /socket.io and /api/socket.io paths
+	
+	@socketio_ws {
+		path /api/socket.io*
+		header Connection *Upgrade*
+		header Upgrade *websocket*
+	}
+	handle @socketio_ws {
+		reverse_proxy localhost:3000 {
+			# Forward WebSocket upgrade headers
+			header_up Host {host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+			header_up Connection {>Connection}
+			header_up Upgrade {>Upgrade}
+		}
+	}
+	
+	# Socket.io with XTransformPort (for mini-services)
+	@socketio_ws_port {
+		path /socket.io*
+		query XTransformPort=*
+		header Connection *Upgrade*
+		header Upgrade *websocket*
+	}
+	handle @socketio_ws_port {
+		reverse_proxy localhost:{query.XTransformPort} {
+			header_up Host {host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+			header_up Connection {>Connection}
+			header_up Upgrade {>Upgrade}
+		}
+	}
 
-        # Socket.io polling fallback
-        @socketio_port {
-                path /socket.io*
-                query XTransformPort=*
-        }
-        handle @socketio_port {
-                reverse_proxy localhost:{query.XTransformPort} {
-                        header_up Host {host}
-                        header_up X-Forwarded-For {remote_host}
-                        header_up X-Forwarded-Proto {scheme}
-                        header_up X-Real-IP {remote_host}
-                }
-        }
+	# ========================================
+	# SOCKET.IO - POLLING FALLBACK
+	# ========================================
+	# For polling transport (long-polling fallback)
+	
+	@socketio_api path /api/socket.io*
+	handle @socketio_api {
+		reverse_proxy localhost:3000 {
+			header_up Host {host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+	
+	# Socket.io polling with XTransformPort
+	@socketio_port {
+		path /socket.io*
+		query XTransformPort=*
+	}
+	handle @socketio_port {
+		reverse_proxy localhost:{query.XTransformPort} {
+			header_up Host {host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+		}
+	}
 
-        # Handle other requests with XTransformPort
-        @transform_port_query {
-                query XTransformPort=*
-        }
-        handle @transform_port_query {
-                reverse_proxy localhost:{query.XTransformPort} {
-                        header_up Host {host}
-                        header_up X-Forwarded-For {remote_host}
-                        header_up X-Forwarded-Proto {scheme}
-                        header_up X-Real-IP {remote_host}
-                }
-        }
+	# ========================================
+	# OTHER REQUESTS WITH XTransformPort
+	# ========================================
+	
+	@transform_port_query {
+		query XTransformPort=*
+	}
+	handle @transform_port_query {
+		reverse_proxy localhost:{query.XTransformPort} {
+			header_up Host {host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+		}
+	}
 
-        # Default to Next.js
-        handle {
-                reverse_proxy localhost:3000 {
-                        header_up Host {host}
-                        header_up X-Forwarded-For {remote_host}
-                        header_up X-Forwarded-Proto {scheme}
-                        header_up X-Real-IP {remote_host}
-                }
-        }
+	# ========================================
+	# DEFAULT - NEXT.JS
+	# ========================================
+	
+	handle {
+		reverse_proxy localhost:3000 {
+			header_up Host {host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+		}
+	}
 }
