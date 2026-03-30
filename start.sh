@@ -11,7 +11,7 @@ mkdir -p /app/data /app/sessions /app/backups
 
 # Set DATABASE_URL explicitly for SQLite
 export DATABASE_URL="file:/app/data/whatsapp.db"
-echo "DATABASE_URL set to: $DATABASE_URL"
+echo "DATABASE_URL: $DATABASE_URL"
 
 # Run database migrations
 echo "Running Prisma migrations..."
@@ -37,22 +37,28 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
   sleep 2
 done
 
+# Test direct WhatsApp service
+echo ""
+echo "Testing direct WhatsApp service Socket.io..."
+curl -s "http://localhost:3030/socket.io/?EIO=4&transport=polling" | head -c 100
+echo ""
+
 # ==================== START NEXT.JS ====================
 
 echo ""
 echo "Step 2: Starting Next.js with custom server..."
 cd /app
-npx tsx server.ts &
+npx tsx server.ts 2>&1 &
 NEXT_PID=$!
 echo "Next.js PID: $NEXT_PID"
 
 # Wait for Next.js
-for i in 1 2 3 4 5 6 7 8 9 10; do
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
   if nc -z localhost 3000 2>/dev/null; then
     echo "✅ Next.js ready (port 3000)"
     break
   fi
-  echo "Waiting for Next.js... ($i/10)"
+  echo "Waiting for Next.js... ($i/15)"
   sleep 2
 done
 
@@ -60,12 +66,14 @@ done
 
 echo ""
 echo "Step 3: Testing Socket.io proxy..."
-echo "Direct WA service test:"
-curl -s -o /dev/null -w "  HTTP %{http_code}" "http://localhost:3030/socket.io/?EIO=4&transport=polling"
+echo ""
+echo "Direct WA service (port 3030):"
+curl -s -w "\n  HTTP Status: %{http_code}\n" "http://localhost:3030/socket.io/?EIO=4&transport=polling" | head -c 200
 echo ""
 
-echo "Proxy test (via Next.js):"
-curl -s -o /dev/null -w "  HTTP %{http_code}" "http://localhost:3000/api/socket.io?EIO=4&transport=polling"
+echo ""
+echo "Proxy via Next.js (port 3000):"
+curl -s -w "\n  HTTP Status: %{http_code}\n" "http://localhost:3000/api/socket.io?EIO=4&transport=polling" | head -c 200
 echo ""
 
 # ==================== FINAL STATUS ====================
@@ -91,7 +99,7 @@ while true; do
   if ! kill -0 $NEXT_PID 2>/dev/null; then
     echo "⚠️ Next.js died, restarting..."
     cd /app
-    npx tsx server.ts &
+    npx tsx server.ts 2>&1 &
     NEXT_PID=$!
   fi
   sleep 10
