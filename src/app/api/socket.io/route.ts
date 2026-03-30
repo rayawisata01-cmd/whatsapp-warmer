@@ -1,69 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// WHATSAPP SERVICE URL - Use environment variable for flexibility
 const WHATSAPP_SERVICE_URL = process.env.WHATSAPP_SERVICE_URL || 'http://localhost:3030';
-
-// CRITICAL: Timeout harus sinkron dengan Socket.io server pingTimeout (120s)
-const REQUEST_TIMEOUT = 120000; // 120 seconds
-
-// Retry configuration for robust connection
+const REQUEST_TIMEOUT = 120000;
 const MAX_RETRIES = 3;
-const RETRY_DELAY_MS = 1000; // 1 second between retries
+const RETRY_DELAY_MS = 500;
 
-// Connection health cache
-let lastHealthCheck = 0;
-let isServiceHealthy = false;
-const HEALTH_CHECK_INTERVAL = 5000; // 5 seconds
-
-/**
- * Check if WhatsApp service is reachable
- * Caches result to avoid excessive checks
- */
-async function checkServiceHealth(): Promise<boolean> {
-  const now = Date.now();
-  
-  // Use cached result if recent
-  if (now - lastHealthCheck < HEALTH_CHECK_INTERVAL) {
-    return isServiceHealthy;
-  }
-  
-  lastHealthCheck = now;
-  
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3000);
-    
-    const response = await fetch(`${WHATSAPP_SERVICE_URL}/health`, {
-      method: 'GET',
-      signal: controller.signal,
-    });
-    
-    clearTimeout(timeoutId);
-    isServiceHealthy = response.ok;
-    
-    if (isServiceHealthy) {
-      console.log('[Socket.io Proxy] Service health check: OK');
-    } else {
-      console.error('[Socket.io Proxy] Service health check: FAILED (status:', response.status, ')');
-    }
-    
-    return isServiceHealthy;
-  } catch (error: any) {
-    isServiceHealthy = false;
-    console.error('[Socket.io Proxy] Service health check: ERROR -', error.message);
-    return false;
-  }
+function log(...args: any[]) {
+  console.log('[Socket.io Proxy]', new Date().toISOString().split('T')[1], ...args);
 }
 
-/**
- * Create a Socket.io compatible error response
- * Socket.io expects plain text in specific format
- */
 function createSocketioError(message: string, code: number = 500): NextResponse {
-  // Socket.io error packet format: "4{json}"
-  const errorPacket = `4${JSON.stringify({ message, code })}`;
-  return new NextResponse(errorPacket, {
-    status: 200, // Socket.io handles errors in packet, HTTP should be 200
+  return new NextResponse(`4${JSON.stringify({ message, code })}`, {
+    status: 200,
     headers: {
       'Content-Type': 'text/plain; charset=UTF-8',
       'Access-Control-Allow-Origin': '*',
@@ -72,14 +20,7 @@ function createSocketioError(message: string, code: number = 500): NextResponse 
   });
 }
 
-/**
- * Fetch with retry logic for robust connection
- */
-async function fetchWithRetry(
-  url: string, 
-  options: RequestInit, 
-  retries: number = MAX_RETRIES
-): Promise<Response> {
+async function fetchWithRetry(url: string, options: RequestInit, retries = MAX_RETRIES): Promise<Response> {
   let lastError: Error | null = null;
   
   for (let attempt = 1; attempt <= retries; attempt++) {
@@ -87,31 +28,24 @@ async function fetchWithRetry(
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
       
-      const response = await fetch(url, {
-        ...options,
-        signal: controller.signal,
-      });
-      
+      const response = await fetch(url, { ...options, signal: controller.signal, redirect: 'manual' });
       clearTimeout(timeoutId);
+      
+      // Handle redirects explicitly - Socket.io doesn't like redirects
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get('location');
+        log(`Unexpected redirect ${response.status} to:`, location);
+        throw new Error(`Redirect not allowed (${response.status})`);
+      }
+      
       return response;
     } catch (error: any) {
       lastError = error;
-      
-      // Don't retry on abort (timeout)
-      if (error.name === 'AbortError') {
-        throw error;
-      }
-      
-      // Log retry attempt
-      console.error(`[Socket.io Proxy] Attempt ${attempt}/${retries} failed:`, error.message);
-      
-      // Wait before retry (except on last attempt)
-      if (attempt < retries) {
-        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
-      }
+      if (error.name === 'AbortError' || error.message?.includes('Redirect')) throw error;
+      log(`Attempt ${attempt}/${retries} failed:`, error.message);
+      if (attempt < retries) await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
     }
   }
-  
   throw lastError;
 }
 
@@ -121,35 +55,19 @@ export async function GET(request: NextRequest) {
   const sid = url.searchParams.get('sid');
   const EIO = url.searchParams.get('EIO') || '4';
 
-  let targetUrl = `${WHATSAPP_SERVICE_URL}/socket.io/?EIO=${EIO}&transport=${transport}`;
-  if (sid) {
-    targetUrl += `&sid=${sid}`;
-  }
+  const targetUrl = `${WHATSAPP_SERVICE_URL}/socket.io/?EIO=${EIO}&transport=${transport}${sid ? `&sid=${sid}` : ''}`;
 
-  // For existing sessions, check service health first
-  if (sid) {
-    const healthy = await checkServiceHealth();
-    if (!healthy) {
-      console.error('[Socket.io Proxy] GET rejected - service unhealthy, sid:', sid);
-      return createSocketioError('WhatsApp service unavailable, please refresh', 503);
-    }
-  }
+  log('GET', { transport, sid: sid?.substring(0, 8) });
 
   try {
-    const headers: Record<string, string> = {
-      'Accept': '*/*',
-      'Connection': 'keep-alive',
-    };
+    const headers: Record<string, string> = { 'Accept': '*/*', 'Connection': 'keep-alive' };
     const cookie = request.headers.get('cookie');
     if (cookie) headers['cookie'] = cookie;
 
-    // Use fetch with retry
-    const response = await fetchWithRetry(targetUrl, {
-      method: 'GET',
-      headers,
-    });
-
+    const response = await fetchWithRetry(targetUrl, { method: 'GET', headers });
     const text = await response.text();
+    
+    log('GET response:', response.status, 'len:', text.length);
 
     return new NextResponse(text, {
       status: response.status,
@@ -162,12 +80,9 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error: any) {
-    if (error.name === 'AbortError') {
-      console.error('[Socket.io Proxy] GET timeout after', REQUEST_TIMEOUT, 'ms');
-      return createSocketioError('Request timeout', 408);
-    }
-    console.error('[Socket.io Proxy] GET error after retries:', error?.message || error);
-    return createSocketioError(error?.message || 'Service unavailable', 503);
+    log('GET error:', error.message);
+    if (error.name === 'AbortError') return createSocketioError('Timeout', 408);
+    return createSocketioError(error.message || 'Service unavailable', 503);
   }
 }
 
@@ -177,14 +92,12 @@ export async function POST(request: NextRequest) {
   const EIO = url.searchParams.get('EIO') || '4';
   const transport = url.searchParams.get('transport') || 'polling';
 
-  let targetUrl = `${WHATSAPP_SERVICE_URL}/socket.io/?EIO=${EIO}&transport=${transport}`;
-  if (sid) {
-    targetUrl += `&sid=${sid}`;
-  }
+  const targetUrl = `${WHATSAPP_SERVICE_URL}/socket.io/?EIO=${EIO}&transport=${transport}${sid ? `&sid=${sid}` : ''}`;
+
+  log('POST', { sid: sid?.substring(0, 8) });
 
   try {
     const body = await request.text();
-
     const headers: Record<string, string> = {
       'Content-Type': 'text/plain; charset=UTF-8',
       'Connection': 'keep-alive',
@@ -192,30 +105,25 @@ export async function POST(request: NextRequest) {
     const cookie = request.headers.get('cookie');
     if (cookie) headers['cookie'] = cookie;
 
-    // Use fetch with retry
-    const response = await fetchWithRetry(targetUrl, {
-      method: 'POST',
-      headers,
-      body,
-    });
-
+    const response = await fetchWithRetry(targetUrl, { method: 'POST', headers, body });
     const text = await response.text();
+    
+    log('POST response:', response.status);
 
-    return new NextResponse(text, {
-      status: response.status,
-      headers: {
-        'Content-Type': 'text/plain; charset=UTF-8',
-        'Access-Control-Allow-Origin': '*',
-        'Connection': 'keep-alive',
-      },
-    });
+    const responseHeaders: Record<string, string> = {
+      'Content-Type': 'text/plain; charset=UTF-8',
+      'Access-Control-Allow-Origin': '*',
+      'Connection': 'keep-alive',
+    };
+
+    const setCookie = response.headers.get('set-cookie');
+    if (setCookie) responseHeaders['Set-Cookie'] = setCookie;
+
+    return new NextResponse(text, { status: response.status, headers: responseHeaders });
   } catch (error: any) {
-    if (error.name === 'AbortError') {
-      console.error('[Socket.io Proxy] POST timeout after', REQUEST_TIMEOUT, 'ms');
-      return createSocketioError('Request timeout', 408);
-    }
-    console.error('[Socket.io Proxy] POST error after retries:', error?.message || error);
-    return createSocketioError(error?.message || 'Service unavailable', 503);
+    log('POST error:', error.message);
+    if (error.name === 'AbortError') return createSocketioError('Timeout', 408);
+    return createSocketioError(error.message || 'Service unavailable', 503);
   }
 }
 
