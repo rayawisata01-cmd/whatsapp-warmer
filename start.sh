@@ -21,7 +21,6 @@ ln -sf /app/node_modules/.prisma /app/mini-services/whatsapp-service/node_module
 
 # ==================== HELPER FUNCTIONS ====================
 
-# Simple TCP port check (faster than HTTP for basic connectivity)
 wait_for_port() {
     local host=$1
     local port=$2
@@ -45,7 +44,6 @@ wait_for_port() {
     return 1
 }
 
-# Health check with retry (for HTTP endpoints)
 wait_for_health() {
     SERVICE_NAME=$1
     HEALTH_URL=$2
@@ -73,8 +71,6 @@ wait_for_health() {
 }
 
 # ==================== START WHATSAPP SERVICE FIRST ====================
-# IMPORTANT: Start WhatsApp service FIRST to avoid race condition
-# Next.js proxy needs WhatsApp service to be ready
 
 echo ""
 echo "=========================================="
@@ -84,13 +80,11 @@ echo "=========================================="
 echo "Working directory: /app/mini-services/whatsapp-service"
 cd /app/mini-services/whatsapp-service
 
-# Check if tsx is available
 if ! command -v tsx &> /dev/null; then
     echo "⚠️ tsx not found, installing..."
     npm install -g tsx
 fi
 
-# Start WhatsApp service with output logging
 echo "Launching WhatsApp service (tsx index.ts)..."
 if command -v unbuffer &> /dev/null; then
     unbuffer npx tsx index.ts > /app/data/whatsapp-service.log 2>&1 &
@@ -102,16 +96,11 @@ fi
 WA_PID=$!
 echo "WhatsApp Service PID: $WA_PID"
 
-# Wait for WhatsApp service to be fully ready
-# This is CRITICAL - don't start Next.js until WA service is ready
 echo ""
 echo "Waiting for WhatsApp service to be fully ready..."
-echo "This may take 30-60 seconds on first start..."
 
-# First wait for port (basic connectivity)
 wait_for_port "localhost" 3030 60 2 || true
 
-# Then wait for health endpoint (full readiness)
 WA_HEALTH_RESULT=0
 wait_for_health "WhatsApp Service" "http://localhost:3030/health" 30 2 || WA_HEALTH_RESULT=$?
 
@@ -126,11 +115,9 @@ if [ $WA_HEALTH_RESULT -ne 0 ]; then
     echo "⚠️ Continuing anyway - service may still be initializing..."
 fi
 
-# Extra stabilization delay
 echo "Giving WhatsApp service extra time to stabilize..."
 sleep 5
 
-# Verify process is still running
 if ! kill -0 $WA_PID 2>/dev/null; then
     echo "❌ WhatsApp service crashed during startup!"
     if [ -f /app/data/whatsapp-service.log ]; then
@@ -157,14 +144,11 @@ bun .next/standalone/server.js &
 NEXTJS_PID=$!
 echo "Next.js PID: $NEXTJS_PID"
 
-# Wait for Next.js port
 wait_for_port "localhost" 3000 30 1 || true
 
-# Extra delay for Next.js route initialization
 echo "Waiting for Next.js routes to initialize..."
 sleep 5
 
-# Check Next.js health
 wait_for_health "Next.js" "http://localhost:3000/api/wa/health" 15 2 || true
 
 # ==================== FINAL VERIFICATION ====================
@@ -174,21 +158,37 @@ echo "=========================================="
 echo "Step 3: Verifying Service Connectivity"
 echo "=========================================="
 
-# Test internal connectivity
+# Test Socket.io proxy - IMPORTANT: Use URL WITHOUT trailing slash
+# Socket.io endpoint is /api/socket.io (no trailing slash)
 echo "Testing Socket.io proxy connectivity..."
-TEST_RESULT=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:3000/api/socket.io/?EIO=4&transport=polling" 2>/dev/null || echo "000")
 
-if [ "$TEST_RESULT" = "200" ] || [ "$TEST_RESULT" = "400" ]; then
-    echo "✅ Socket.io proxy is responding (HTTP $TEST_RESULT)"
+# Test 1: Direct WhatsApp service (bypass Next.js proxy)
+echo "Test 1: Direct WhatsApp service (port 3030)..."
+DIRECT_RESULT=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:3030/socket.io/?EIO=4&transport=polling" 2>/dev/null || echo "000")
+echo "  Direct WA service response: HTTP $DIRECT_RESULT"
+
+# Test 2: Via Next.js proxy - NO trailing slash!
+echo "Test 2: Via Next.js proxy (port 3000)..."
+PROXY_RESULT=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:3000/api/socket.io?EIO=4&transport=polling" 2>/dev/null || echo "000")
+echo "  Proxy response: HTTP $PROXY_RESULT"
+
+# Acceptable responses: 200 (OK) or 400 (Bad Request - normal for missing session)
+if [ "$PROXY_RESULT" = "200" ] || [ "$PROXY_RESULT" = "400" ]; then
+    echo "✅ Socket.io proxy is working correctly (HTTP $PROXY_RESULT)"
+elif [ "$PROXY_RESULT" = "308" ] || [ "$PROXY_RESULT" = "301" ] || [ "$PROXY_RESULT" = "302" ] || [ "$PROXY_RESULT" = "307" ]; then
+    echo "❌ CRITICAL: Proxy returned redirect ($PROXY_RESULT)! This will break Socket.io!"
+    echo "   Checking redirect location..."
+    REDIRECT_LOCATION=$(curl -s -I "http://localhost:3000/api/socket.io?EIO=4&transport=polling" 2>/dev/null | grep -i "location:" | head -1)
+    echo "   Redirect to: $REDIRECT_LOCATION"
 else
-    echo "⚠️ Socket.io proxy returned HTTP $TEST_RESULT (may need investigation)"
+    echo "⚠️ Socket.io proxy returned HTTP $PROXY_RESULT (unexpected)"
 fi
 
 # ==================== FINAL STATUS ====================
 
 echo ""
 echo "=========================================="
-echo "🚀 ALL SERVICES STARTED SUCCESSFULLY"
+echo "🚀 ALL SERVICES STARTED"
 echo "=========================================="
 echo "Service Status:"
 echo "  - WhatsApp Service: http://localhost:3030 (PID: $WA_PID)"
@@ -196,12 +196,10 @@ echo "  - Next.js Server:   http://localhost:3000 (PID: $NEXTJS_PID)"
 echo "=========================================="
 echo ""
 
-# Function to handle process exit
 handle_exit() {
     echo ""
     echo "Received shutdown signal..."
     
-    # Check which process exited
     if ! kill -0 $NEXTJS_PID 2>/dev/null; then
         echo "Next.js process has exited"
     fi
@@ -213,13 +211,10 @@ handle_exit() {
         fi
     fi
     
-    # Kill remaining processes
     kill $NEXTJS_PID $WA_PID 2>/dev/null || true
     exit 0
 }
 
-# Keep script running and handle signals
 trap handle_exit SIGTERM SIGINT
 
-# Wait for any process to exit
 wait
