@@ -36,16 +36,17 @@ const io = new Server(httpServer, {
     credentials: true
   },
   allowEIO3: true,
-  transports: ['polling', 'websocket'], // Polling first for Railway proxy compatibility
+  // CRITICAL FIX: Polling-only mode for Railway + Next.js proxy
+  // WebSocket upgrade fails behind Next.js API routes, causing reconnect loops
+  transports: ['polling'], // Polling ONLY - no WebSocket upgrade
   path: '/socket.io',
   // CRITICAL: Extended timeouts for Railway + browser tab backgrounding
   // When browser suspends polling, server needs longer timeout before disconnecting
-  pingTimeout: 120000, // 120 seconds - very long timeout for browser suspension
-  pingInterval: 30000, // 30 seconds - keep connection alive
-  upgradeTimeout: 60000, // 60 seconds for upgrade (longer for Railway)
+  pingTimeout: 180000, // 180 seconds - extra long timeout for polling-only mode
+  pingInterval: 25000, // 25 seconds - more frequent keepalive for polling
   maxHttpBufferSize: 1e7, // 10MB for large QR codes
-  // Allow transport upgrade
-  allowUpgrades: true,
+  // CRITICAL FIX: Disable upgrades completely
+  allowUpgrades: false, // NO WebSocket upgrade attempts
   // Per-connection settings
   connectTimeout: 60000, // 60 seconds to establish connection
 });

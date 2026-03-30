@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 const WHATSAPP_SERVICE_URL = process.env.WHATSAPP_SERVICE_URL || 'http://localhost:3030';
-const REQUEST_TIMEOUT = 120000;
+// CRITICAL: Timeout must be longer than server pingTimeout (180s) to avoid premature disconnection
+const REQUEST_TIMEOUT = 200000; // ~3.3 minutes - longer than server's 180s pingTimeout
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 500;
 
