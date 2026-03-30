@@ -10,7 +10,7 @@ RUN apk add --no-cache \
     nodejs \
     npm \
     curl \
-    supervisor
+    netcat-openbsd
 
 ENV NODE_ENV=production
 ENV HOSTNAME=0.0.0.0
@@ -29,25 +29,12 @@ COPY prisma ./prisma
 RUN bun install --frozen-lockfile
 RUN bunx prisma generate
 
-# Copy whatsapp-service package files
-COPY whatsapp-service/package.json ./wa-package.json
-COPY whatsapp-service/bun.lock ./wa-bun.lock
-COPY whatsapp-service/prisma ./wa-prisma/
-
-# Install whatsapp-service dependencies in subdirectory
-RUN mkdir -p /app/whatsapp-service && \
-    cp wa-package.json /app/whatsapp-service/package.json && \
-    cp wa-bun.lock /app/whatsapp-service/bun.lock && \
-    cp -r wa-prisma /app/whatsapp-service/prisma && \
-    cd /app/whatsapp-service && bun install --frozen-lockfile && bunx prisma generate
-
 # ========== BUILDER STAGE ==========
 FROM base AS builder
 
 # Copy node_modules from deps
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/.prisma ./.prisma
-COPY --from=deps /app/whatsapp-service /app/whatsapp-service
 
 # Copy source files
 COPY . .
@@ -75,10 +62,15 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/.prisma ./.prisma
 COPY --from=builder /app/prisma ./prisma
 
-# Copy whatsapp-service
-COPY --from=builder /app/whatsapp-service ./whatsapp-service
-COPY --from=builder /app/whatsapp-service/node_modules ./whatsapp-service/node_modules
-COPY --from=builder /app/whatsapp-service/.prisma ./whatsapp-service/.prisma
+# Copy whatsapp-service source files
+COPY whatsapp-service/index.ts ./whatsapp-service/index.ts
+COPY whatsapp-service/package.json ./whatsapp-service/package.json
+COPY whatsapp-service/db.ts ./whatsapp-service/db.ts
+COPY whatsapp-service/config.json ./whatsapp-service/config.json
+COPY whatsapp-service/prisma ./whatsapp-service/prisma
+
+# Install whatsapp-service dependencies (without frozen-lockfile)
+RUN cd /app/whatsapp-service && bun install && bunx prisma generate
 
 # Copy start script
 COPY start.sh ./start.sh
