@@ -46,7 +46,6 @@ wait_for_port() {
 }
 
 # Health check with retry (for HTTP endpoints)
-# Args: $1 = service name, $2 = url, $3 = max attempts, $4 = delay seconds
 wait_for_health() {
     SERVICE_NAME=$1
     HEALTH_URL=$2
@@ -59,7 +58,6 @@ wait_for_health() {
     while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
         echo "  Attempt $ATTEMPT/$MAX_ATTEMPTS: Checking $HEALTH_URL..."
         
-        # Use curl with timeout, return true if HTTP 200
         if curl -s -f -m 5 "$HEALTH_URL" > /dev/null 2>&1; then
             echo "  ✅ $SERVICE_NAME is ready!"
             return 0
@@ -74,27 +72,15 @@ wait_for_health() {
     return 1
 }
 
-# ==================== START NEXT.JS ====================
+# ==================== START WHATSAPP SERVICE FIRST ====================
+# IMPORTANT: Start WhatsApp service FIRST to avoid race condition
+# Next.js proxy needs WhatsApp service to be ready
 
-echo "Starting Next.js server..."
-bun .next/standalone/server.js &
-NEXTJS_PID=$!
-echo "Next.js PID: $NEXTJS_PID"
+echo ""
+echo "=========================================="
+echo "Step 1: Starting WhatsApp Service"
+echo "=========================================="
 
-# First wait for port to be open (faster check)
-wait_for_port "localhost" 3000 30 1 || true
-
-# Give Next.js extra time to fully initialize routes (cold start compilation)
-echo "Waiting for Next.js routes to warm up..."
-sleep 5
-
-# Now check health endpoint (max 15 attempts after warmup)
-# Note: Use || true to prevent script exit on failure (set -e is active)
-wait_for_health "Next.js" "http://localhost:3000/api/wa/health" 15 2 || true
-
-# ==================== START WHATSAPP SERVICE ====================
-
-echo "Starting WhatsApp service with Node.js..."
 echo "Working directory: /app/mini-services/whatsapp-service"
 cd /app/mini-services/whatsapp-service
 
@@ -105,41 +91,27 @@ if ! command -v tsx &> /dev/null; then
 fi
 
 # Start WhatsApp service with output logging
-# Use unbuffer (expect package) to prevent output buffering for real-time logs
-# This ensures health check logs appear immediately, not after buffer flush
-echo "Launching tsx index.ts..."
+echo "Launching WhatsApp service (tsx index.ts)..."
 if command -v unbuffer &> /dev/null; then
     unbuffer npx tsx index.ts > /app/data/whatsapp-service.log 2>&1 &
+elif command -v stdbuf &> /dev/null; then
+    stdbuf -oL -eL npx tsx index.ts > /app/data/whatsapp-service.log 2>&1 &
 else
-    # Fallback: use stdbuf if available, otherwise regular redirect
-    if command -v stdbuf &> /dev/null; then
-        stdbuf -oL -eL npx tsx index.ts > /app/data/whatsapp-service.log 2>&1 &
-    else
-        npx tsx index.ts > /app/data/whatsapp-service.log 2>&1 &
-    fi
+    npx tsx index.ts > /app/data/whatsapp-service.log 2>&1 &
 fi
 WA_PID=$!
 echo "WhatsApp Service PID: $WA_PID"
 
-# Wait a moment for the process to start
-sleep 2
+# Wait for WhatsApp service to be fully ready
+# This is CRITICAL - don't start Next.js until WA service is ready
+echo ""
+echo "Waiting for WhatsApp service to be fully ready..."
+echo "This may take 30-60 seconds on first start..."
 
-# Check if process is still running
-if ! kill -0 $WA_PID 2>/dev/null; then
-    echo "❌ WhatsApp service failed to start!"
-    echo "=== WhatsApp Service Log ==="
-    if [ -f /app/data/whatsapp-service.log ]; then
-        cat /app/data/whatsapp-service.log
-    else
-        echo "No log file found"
-    fi
-    echo "=== End Log ==="
-    exit 1
-fi
+# First wait for port (basic connectivity)
+wait_for_port "localhost" 3030 60 2 || true
 
-echo "WhatsApp service started, waiting for it to be ready..."
-
-# Wait for WhatsApp service to be healthy (max 30 attempts, 2s delay = 60s total)
+# Then wait for health endpoint (full readiness)
 WA_HEALTH_RESULT=0
 wait_for_health "WhatsApp Service" "http://localhost:3030/health" 30 2 || WA_HEALTH_RESULT=$?
 
@@ -150,18 +122,83 @@ if [ $WA_HEALTH_RESULT -ne 0 ]; then
         tail -50 /app/data/whatsapp-service.log
         echo "=== End Logs ==="
     fi
+    echo ""
+    echo "⚠️ Continuing anyway - service may still be initializing..."
+fi
+
+# Extra stabilization delay
+echo "Giving WhatsApp service extra time to stabilize..."
+sleep 5
+
+# Verify process is still running
+if ! kill -0 $WA_PID 2>/dev/null; then
+    echo "❌ WhatsApp service crashed during startup!"
+    if [ -f /app/data/whatsapp-service.log ]; then
+        echo "=== WhatsApp Service Log ==="
+        cat /app/data/whatsapp-service.log
+        echo "=== End Log ==="
+    fi
+    exit 1
+fi
+
+echo "✅ WhatsApp service is running and healthy!"
+
+# ==================== START NEXT.JS ====================
+
+echo ""
+echo "=========================================="
+echo "Step 2: Starting Next.js Server"
+echo "=========================================="
+
+cd /app
+
+echo "Starting Next.js server..."
+bun .next/standalone/server.js &
+NEXTJS_PID=$!
+echo "Next.js PID: $NEXTJS_PID"
+
+# Wait for Next.js port
+wait_for_port "localhost" 3000 30 1 || true
+
+# Extra delay for Next.js route initialization
+echo "Waiting for Next.js routes to initialize..."
+sleep 5
+
+# Check Next.js health
+wait_for_health "Next.js" "http://localhost:3000/api/wa/health" 15 2 || true
+
+# ==================== FINAL VERIFICATION ====================
+
+echo ""
+echo "=========================================="
+echo "Step 3: Verifying Service Connectivity"
+echo "=========================================="
+
+# Test internal connectivity
+echo "Testing Socket.io proxy connectivity..."
+TEST_RESULT=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:3000/api/socket.io/?EIO=4&transport=polling" 2>/dev/null || echo "000")
+
+if [ "$TEST_RESULT" = "200" ] || [ "$TEST_RESULT" = "400" ]; then
+    echo "✅ Socket.io proxy is responding (HTTP $TEST_RESULT)"
+else
+    echo "⚠️ Socket.io proxy returned HTTP $TEST_RESULT (may need investigation)"
 fi
 
 # ==================== FINAL STATUS ====================
 
+echo ""
+echo "=========================================="
+echo "🚀 ALL SERVICES STARTED SUCCESSFULLY"
 echo "=========================================="
 echo "Service Status:"
-echo "- Next.js (Bun): http://localhost:3000 (PID: $NEXTJS_PID)"
-echo "- WhatsApp Service (Node.js): http://localhost:3030 (PID: $WA_PID)"
+echo "  - WhatsApp Service: http://localhost:3030 (PID: $WA_PID)"
+echo "  - Next.js Server:   http://localhost:3000 (PID: $NEXTJS_PID)"
 echo "=========================================="
+echo ""
 
 # Function to handle process exit
 handle_exit() {
+    echo ""
     echo "Received shutdown signal..."
     
     # Check which process exited
@@ -170,7 +207,6 @@ handle_exit() {
     fi
     if ! kill -0 $WA_PID 2>/dev/null; then
         echo "WhatsApp service process has exited"
-        # Show last logs
         if [ -f /app/data/whatsapp-service.log ]; then
             echo "=== Last WhatsApp Service Logs ==="
             tail -30 /app/data/whatsapp-service.log

@@ -4182,10 +4182,13 @@ async function start() {
       });
     });
 
-    httpServer.listen(PORT, () => {
+    // CRITICAL: Listen on 0.0.0.0 for Railway container networking
+    // If we only listen on localhost (127.0.0.1), internal proxy from Next.js may fail
+    httpServer.listen(PORT, '0.0.0.0', () => {
       console.log(`==========================================`);
       console.log(`🔥 WhatsApp Warmer Service running on port ${PORT}`);
       console.log(`📊 Health check: http://localhost:${PORT}/health`);
+      console.log(`🌐 Listening on: 0.0.0.0:${PORT} (all interfaces)`);
       console.log(`🔑 Groq API: ${aiApiSettings.groqApiKey ? 'Configured' : 'NOT SET - Set GROQ_API_KEY'}`);
       console.log(`==========================================`);
       addLog('info', '🚀 WhatsApp Warmer Service started');
