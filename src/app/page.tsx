@@ -348,31 +348,29 @@ export default function Dashboard() {
       if (isConnectingRef.current) return;
       isConnectingRef.current = true;
       
-      // CRITICAL: Polling-only mode for Railway + Next.js proxy
-      // WebSocket upgrade fails behind Next.js API routes, causing reconnect loops
-      // Server configured with: pingTimeout: 180s, pingInterval: 25s, allowUpgrades: false
+      // UPDATED: WebSocket support via custom Next.js server
+      // Custom server uses http-proxy-middleware for proper WebSocket proxying
       const socketOptions: any = {
         path: '/api/socket.io',
-        transports: ['polling'], // Polling ONLY - no WebSocket upgrade
-        upgrade: false, // Explicitly disable upgrade attempts
+        transports: ['polling', 'websocket'], // Start with polling, upgrade to WebSocket
+        upgrade: true, // Allow upgrade to WebSocket
         reconnection: true,
-        reconnectionAttempts: 15, // More attempts for polling mode
-        reconnectionDelay: 2000, // Start with 2 seconds
-        reconnectionDelayMax: 30000, // Max 30 seconds
-        timeout: 180000, // Match server pingTimeout (180 seconds)
+        reconnectionAttempts: 10,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 20000,
+        timeout: 60000, // Match server pingTimeout (60 seconds)
         forceNew: false,
-        // Polling-specific options
         extraHeaders: {
           'Connection': 'keep-alive',
         },
       };
 
       const socketUrl = window.location.origin;
-      console.log('[WS] Connecting via Next.js API proxy (polling-only mode)...', { 
+      console.log('[WS] Connecting via custom server (WebSocket enabled)...', { 
         url: socketUrl, 
         path: '/api/socket.io',
-        timeout: '180s',
-        transports: ['polling']
+        timeout: '60s',
+        transports: ['polling', 'websocket']
       });
       
       socketRef.current = io(socketUrl, socketOptions);

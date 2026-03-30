@@ -1,11 +1,11 @@
 # Combined Dockerfile - Next.js + WhatsApp Service in ONE container
-# This runs both services using start.sh
+# This runs both services using start.sh with custom server for WebSocket proxy
 
 FROM oven/bun:1-alpine AS base
 
 WORKDIR /app
 
-# Install dependencies
+# Install dependencies including tsx for custom server
 RUN apk add --no-cache \
     nodejs \
     npm \
@@ -60,6 +60,9 @@ COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/prisma ./prisma
 
+# Copy custom server for WebSocket proxy support
+COPY --from=builder /app/server.ts ./server.ts
+
 # Copy whatsapp-service source files
 COPY whatsapp-service/index.ts ./whatsapp-service/index.ts
 COPY whatsapp-service/package.json ./whatsapp-service/package.json
@@ -86,5 +89,5 @@ ENV WHATSAPP_SERVICE_PORT=3030
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
   CMD curl -f http://localhost:3000/api/wa/health || exit 1
 
-# Start both services
+# Start both services with custom server
 CMD ["./start.sh"]
