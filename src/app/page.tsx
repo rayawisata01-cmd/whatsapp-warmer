@@ -50,6 +50,10 @@ import {
   CheckCircle,
   Settings,
   Save,
+  Crown,
+  Filter,
+  Search,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -245,6 +249,10 @@ export default function Dashboard() {
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [isTestingAi, setIsTestingAi] = useState(false);
   const [aiTestResult, setAiTestResult] = useState<{ success: boolean; response?: string; error?: string } | null>(null);
+
+  // Results Tab state
+  const [selectedTier, setSelectedTier] = useState<number | null>(null);
+  const [resultsSearch, setResultsSearch] = useState("");
 
   const { toast } = useToast();
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
@@ -1078,6 +1086,76 @@ export default function Dashboard() {
     return "text-red-500";
   };
 
+  // Tier calculation helpers
+  const calculateTier = (account: Account): { tier: number; tierName: string } => {
+    const totalMessages = (account.warmingStats?.messagesSent || 0) + (account.warmingStats?.messagesReceived || 0);
+    if (totalMessages >= 1000) return { tier: 5, tierName: "Aged Pro" };
+    if (totalMessages >= 501) return { tier: 4, tierName: "High Quality" };
+    if (totalMessages >= 201) return { tier: 3, tierName: "Premium" };
+    if (totalMessages >= 51) return { tier: 2, tierName: "Regular" };
+    return { tier: 1, tierName: "Fresh Warmed" };
+  };
+
+  const getTierInfo = (tier: number) => {
+    const tiers = {
+      1: { 
+        name: "Fresh Warmed", 
+        color: "text-emerald-600 dark:text-emerald-400", 
+        bg: "bg-emerald-100 dark:bg-emerald-500/20",
+        gradient: "from-emerald-500 to-teal-500",
+        border: "border-emerald-200 dark:border-emerald-500/30",
+        icon: Sparkles,
+        min: 0, max: 50 
+      },
+      2: { 
+        name: "Regular", 
+        color: "text-blue-600 dark:text-blue-400", 
+        bg: "bg-blue-100 dark:bg-blue-500/20",
+        gradient: "from-blue-500 to-cyan-500",
+        border: "border-blue-200 dark:border-blue-500/30",
+        icon: Zap,
+        min: 51, max: 200 
+      },
+      3: { 
+        name: "Premium", 
+        color: "text-purple-600 dark:text-purple-400", 
+        bg: "bg-purple-100 dark:bg-purple-500/20",
+        gradient: "from-purple-500 to-pink-500",
+        border: "border-purple-200 dark:border-purple-500/30",
+        icon: Star,
+        min: 201, max: 500 
+      },
+      4: { 
+        name: "High Quality", 
+        color: "text-orange-600 dark:text-orange-400", 
+        bg: "bg-orange-100 dark:bg-orange-500/20",
+        gradient: "from-orange-500 to-red-500",
+        border: "border-orange-200 dark:border-orange-500/30",
+        icon: Flame,
+        min: 501, max: 1000 
+      },
+      5: { 
+        name: "Aged Pro", 
+        color: "text-amber-600 dark:text-amber-400", 
+        bg: "bg-amber-100 dark:bg-amber-500/20",
+        gradient: "from-amber-500 to-yellow-500",
+        border: "border-amber-200 dark:border-amber-500/30",
+        icon: Crown,
+        min: 1001, max: Infinity 
+      },
+    };
+    return tiers[tier as keyof typeof tiers] || tiers[1];
+  };
+
+  const getTierStats = () => {
+    const tierCounts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    accounts.forEach(account => {
+      const { tier } = calculateTier(account);
+      tierCounts[tier as keyof typeof tierCounts]++;
+    });
+    return tierCounts;
+  };
+
   // Chronotype helpers
   const getChronotypeInfo = (chronotype?: Personality['chronotype']) => {
     switch (chronotype) {
@@ -1177,7 +1255,7 @@ export default function Dashboard() {
         {/* Main Content */}
         <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-            <TabsList className="grid w-full grid-cols-4 lg:w-auto lg:inline-grid">
+            <TabsList className="grid w-full grid-cols-5 lg:w-auto lg:inline-grid">
               <TabsTrigger value="dashboard" className="gap-2">
                 <LayoutDashboard className="h-4 w-4" />
                 <span className="hidden sm:inline">Dashboard</span>
@@ -1185,6 +1263,10 @@ export default function Dashboard() {
               <TabsTrigger value="accounts" className="gap-2">
                 <Users className="h-4 w-4" />
                 <span className="hidden sm:inline">Akun</span>
+              </TabsTrigger>
+              <TabsTrigger value="results" className="gap-2">
+                <TrendingUp className="h-4 w-4" />
+                <span className="hidden sm:inline">Results</span>
               </TabsTrigger>
               <TabsTrigger value="chatlog" className="gap-2">
                 <MessageCircle className="h-4 w-4" />
@@ -1676,6 +1758,259 @@ export default function Dashboard() {
                   )}
                 </Card>
               )}
+            </TabsContent>
+
+            {/* RESULTS TAB */}
+            <TabsContent value="results" className="space-y-6">
+              {/* Header with gradient */}
+              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-6">
+                <div className="absolute inset-0 bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-yellow-500/10" />
+                <div className="relative flex items-center justify-between">
+                  <div>
+                    <h2 className="text-2xl font-bold text-white flex items-center gap-3">
+                      <div className="p-2 rounded-xl bg-gradient-to-br from-orange-500 to-amber-500">
+                        <TrendingUp className="h-6 w-6" />
+                      </div>
+                      Results Overview
+                    </h2>
+                    <p className="text-slate-400 mt-1">Account quality tiers based on message activity</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-4xl font-bold text-white">{accounts.length}</p>
+                    <p className="text-slate-400 text-sm">Total Accounts</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Tier Summary Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+                {[1, 2, 3, 4, 5].map((tier) => {
+                  const tierInfo = getTierInfo(tier);
+                  const tierStats = getTierStats();
+                  const count = tierStats[tier as keyof typeof tierStats];
+                  const Icon = tierInfo.icon;
+                  const isSelected = selectedTier === tier;
+                  
+                  return (
+                    <Card 
+                      key={tier}
+                      className={cn(
+                        "relative overflow-hidden cursor-pointer transition-all duration-300 hover:scale-[1.02]",
+                        isSelected && "ring-2 ring-offset-2 ring-offset-background",
+                        tierInfo.border
+                      )}
+                      onClick={() => setSelectedTier(isSelected ? null : tier)}
+                    >
+                      <div className={cn("absolute inset-0 bg-gradient-to-br opacity-5", tierInfo.gradient)} />
+                      <CardContent className="pt-4 pb-3">
+                        <div className="flex items-start justify-between mb-2">
+                          <div className={cn("p-2 rounded-lg", tierInfo.bg)}>
+                            <Icon className={cn("h-4 w-4", tierInfo.color)} />
+                          </div>
+                          <span className={cn("text-xs font-medium px-2 py-0.5 rounded-full", tierInfo.bg, tierInfo.color)}>
+                            T{tier}
+                          </span>
+                        </div>
+                        <p className="font-semibold text-slate-900 dark:text-white">{tierInfo.name}</p>
+                        <p className="text-2xl font-bold mt-1 text-slate-900 dark:text-white">{count}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          {tierInfo.min === 0 ? `${tierInfo.max}` : tierInfo.max === Infinity ? `${tierInfo.min}+` : `${tierInfo.min}-${tierInfo.max}`} msgs
+                        </p>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+
+              {/* Search and Actions */}
+              <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+                <div className="relative flex-1 w-full sm:max-w-sm">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <Input
+                    placeholder="Search accounts..."
+                    value={resultsSearch}
+                    onChange={(e) => setResultsSearch(e.target.value)}
+                    className="pl-9"
+                  />
+                  {resultsSearch && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 p-0"
+                      onClick={() => setResultsSearch("")}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  {selectedTier && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectedTier(null)}
+                      className="gap-1"
+                    >
+                      <X className="h-3 w-3" />
+                      Clear Filter
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const csvContent = [
+                        ['ID', 'Name', 'Phone', 'Tier', 'Messages', 'Status', 'Health'].join(','),
+                        ...filteredResults.map(a => [
+                          a.id,
+                          a.personality?.name || 'N/A',
+                          a.phoneNumber || 'N/A',
+                          calculateTier(a).tierName,
+                          (a.warmingStats?.messagesSent || 0) + (a.warmingStats?.messagesReceived || 0),
+                          a.status,
+                          a.warmingStats?.healthScore || 0
+                        ].join(','))
+                      ].join('\n');
+                      
+                      const blob = new Blob([csvContent], { type: 'text/csv' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `results-${new Date().toISOString().split('T')[0]}.csv`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                      
+                      toast({ title: "Export Complete", description: "Results exported to CSV" });
+                    }}
+                    className="gap-2"
+                  >
+                    <Download className="h-4 w-4" />
+                    Export CSV
+                  </Button>
+                </div>
+              </div>
+
+              {/* Filtered Results */}
+              {(() => {
+                const filteredResults = accounts.filter(account => {
+                  const { tier } = calculateTier(account);
+                  const matchesTier = selectedTier === null || tier === selectedTier;
+                  const matchesSearch = resultsSearch === "" || 
+                    account.id.toLowerCase().includes(resultsSearch.toLowerCase()) ||
+                    account.personality?.name?.toLowerCase().includes(resultsSearch.toLowerCase()) ||
+                    account.phoneNumber?.includes(resultsSearch);
+                  return matchesTier && matchesSearch;
+                });
+
+                return (
+                  <>
+                    <div className="flex items-center justify-between text-sm text-slate-500">
+                      <p>Showing {filteredResults.length} of {accounts.length} accounts</p>
+                      {selectedTier && (
+                        <Badge variant="secondary" className="gap-1">
+                          Filtered by: {getTierInfo(selectedTier).name}
+                        </Badge>
+                      )}
+                    </div>
+
+                    {filteredResults.length === 0 ? (
+                      <Card className="border-dashed">
+                        <CardContent className="flex flex-col items-center justify-center py-12">
+                          <div className="p-4 rounded-full bg-slate-100 dark:bg-slate-800 mb-4">
+                            <Search className="h-8 w-8 text-slate-400" />
+                          </div>
+                          <p className="text-slate-500 dark:text-slate-400 text-center">
+                            {accounts.length === 0 
+                              ? "No accounts yet. Add your first account to see results."
+                              : "No accounts match your search criteria."}
+                          </p>
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                        {filteredResults.map((account) => {
+                          const { tier, tierName } = calculateTier(account);
+                          const tierInfo = getTierInfo(tier);
+                          const TierIcon = tierInfo.icon;
+                          const totalMessages = (account.warmingStats?.messagesSent || 0) + (account.warmingStats?.messagesReceived || 0);
+                          
+                          return (
+                            <Card 
+                              key={account.id}
+                              className={cn(
+                                "group relative overflow-hidden transition-all duration-300 hover:shadow-lg",
+                                tierInfo.border
+                              )}
+                            >
+                              {/* Tier indicator stripe */}
+                              <div className={cn("absolute top-0 left-0 right-0 h-1 bg-gradient-to-r", tierInfo.gradient)} />
+                              
+                              <CardContent className="pt-4">
+                                <div className="flex items-start justify-between mb-3">
+                                  <div className="flex items-center gap-2">
+                                    <Avatar className="h-10 w-10">
+                                      <AvatarImage src={account.profilePicture} />
+                                      <AvatarFallback className={cn("text-white bg-gradient-to-br", tierInfo.gradient)}>
+                                        {account.personality?.name?.[0] || account.id[0].toUpperCase()}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <div>
+                                      <p className="font-medium text-slate-900 dark:text-white text-sm">
+                                        {account.personality?.name || account.id}
+                                      </p>
+                                      <p className="text-xs text-slate-500">{account.phoneNumber || 'No phone'}</p>
+                                    </div>
+                                  </div>
+                                  <Badge 
+                                    variant="secondary"
+                                    className={cn("gap-1 text-[10px] px-2 py-0.5", tierInfo.bg, tierInfo.color)}
+                                  >
+                                    <TierIcon className="h-3 w-3" />
+                                    T{tier}
+                                  </Badge>
+                                </div>
+
+                                <div className="space-y-2">
+                                  {/* Messages */}
+                                  <div className="flex items-center justify-between text-xs">
+                                    <span className="text-slate-500">Messages</span>
+                                    <span className="font-medium text-slate-900 dark:text-white">{totalMessages}</span>
+                                  </div>
+
+                                  {/* Health Progress */}
+                                  <div className="space-y-1">
+                                    <div className="flex items-center justify-between text-xs">
+                                      <span className="text-slate-500">Health</span>
+                                      <span className={cn("font-medium", getHealthColor(account.warmingStats?.healthScore || 0))}>
+                                        {account.warmingStats?.healthScore || 0}%
+                                      </span>
+                                    </div>
+                                    <Progress 
+                                      value={account.warmingStats?.healthScore || 0}
+                                      className="h-1.5"
+                                    />
+                                  </div>
+
+                                  {/* Status */}
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className={cn("w-2 h-2 rounded-full", getStatusColor(account.status))} />
+                                      <span className="text-xs text-slate-500 capitalize">{account.status}</span>
+                                    </div>
+                                    <Badge variant="outline" className="text-[10px]">
+                                      {account.pool || 'offline'}
+                                    </Badge>
+                                  </div>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </TabsContent>
 
             {/* CHAT LOG TAB */}
