@@ -1,0 +1,198 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:/home/z/my-project/db/custom.db"
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Post {
+  id        String   @id @default(cuid())
+  title     String
+  content   String?
+  published Boolean  @default(false)
+  authorId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ==================== WHATSAPP WARMER MODELS ====================
+
+model WhatsAppAccount {
+  id              String   @id
+  phoneNumber     String?
+  name            String?
+  profilePicture  String?
+  status          String   @default("offline") // online, offline, connecting
+  warmingEnabled  Boolean  @default(true)
+  pool            String   @default("offline") // active, idle, offline
+  poolSince       DateTime @default(now())
+  lastSeen        DateTime?
+  
+  // Warming stats
+  warmingStartTime    DateTime?
+  messagesSent        Int      @default(0)
+  messagesReceived    Int      @default(0)
+  autoResponsesSent   Int      @default(0)
+  healthScore         Int      @default(100)
+  currentPhase        Int      @default(1)
+  warmingDays         Int      @default(0)
+  lastActivity        DateTime?
+  
+  // Rate limiting
+  rateLimitHourCount   Int      @default(0)
+  rateLimitDayCount    Int      @default(0)
+  rateLimitHourReset   DateTime @default(now())
+  rateLimitDayReset    DateTime @default(now())
+  
+  // Current chat partner
+  currentChatPartnerId String?
+  
+  // Activity tracking
+  isInActiveWindow Boolean @default(true)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  personality   Personality?
+  sentMessages  Message[]  @relation("SentMessages")
+  recvMessages  Message[]  @relation("RecvMessages")
+  chatPairs1    ChatPair[] @relation("ChatPair1")
+  chatPairs2    ChatPair[] @relation("ChatPair2")
+
+  @@index([status])
+  @@index([pool])
+}
+
+model Personality {
+  id           String @id @default(cuid())
+  accountId    String @unique
+  account      WhatsAppAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  
+  name           String
+  age            Int
+  occupation     String
+  location       String
+  traits         String  // JSON array as string
+  writingStyle   String
+  hobbies        String  // JSON array as string
+  responseStyle  String
+  
+  // Chronotype
+  chronotype      String  @default("regular") // early_bird, night_owl, regular, flexible
+  activeHoursStart Int    @default(8)
+  activeHoursEnd   Int    @default(22)
+  peakHours       String  @default("[]") // JSON array
+  
+  // Communication preferences
+  avgResponseTime  Int     @default(5)  // minutes
+  emojiUsage       String  @default("moderate") // heavy, moderate, minimal
+  avgMessageLength String  @default("medium") // short, medium, long
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ChatPair {
+  id          String   @id @default(cuid())
+  account1Id  String
+  account2Id  String
+  
+  account1    WhatsAppAccount @relation("ChatPair1", fields: [account1Id], references: [id], onDelete: Cascade)
+  account2    WhatsAppAccount @relation("ChatPair2", fields: [account2Id], references: [id], onDelete: Cascade)
+  
+  startedAt     DateTime @default(now())
+  lastMessageAt DateTime?
+  messageCount  Int      @default(0)
+  
+  // Topic system
+  currentTopic     String
+  topicCategory    String
+  topicStartedAt   DateTime @default(now())
+  topicsDiscussed  String   @default("[]") // JSON array
+  conversationCtx  String   @default("[]") // JSON array - last few messages for context
+  
+  // Relationship
+  relationshipStage String  @default("stranger") // stranger, acquaintance, friend, close_friend
+  sharedInterests   String  @default("[]") // JSON array
+  
+  // Natural decay
+  silenceCount    Int       @default(0)
+  lastRespondedAt DateTime?
+  isActive        Boolean   @default(true)
+  
+  endedAt DateTime?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@unique([account1Id, account2Id])
+  @@index([isActive])
+}
+
+model Message {
+  id            String   @id @default(cuid())
+  accountId     String
+  fromAccountId String
+  toAccountId   String
+  
+  account       WhatsAppAccount @relation("SentMessages", fields: [accountId], references: [id], onDelete: Cascade)
+  toAccount     WhatsAppAccount @relation("RecvMessages", fields: [toAccountId], references: [id], onDelete: Cascade)
+  
+  text            String
+  timestamp       DateTime @default(now())
+  direction       String   // incoming, outgoing
+  isAutoResponse  Boolean  @default(false)
+  
+  chatPairId String?
+  
+  createdAt DateTime @default(now())
+  
+  @@index([accountId])
+  @@index([timestamp])
+}
+
+model EventLog {
+  id        String   @id @default(cuid())
+  accountId String?  // Just store the ID as string, no foreign key relation
+  
+  type      String   // message, connection, error, info, warming, pool, backup, ratelimit
+  message   String
+  timestamp DateTime @default(now())
+  
+  @@index([timestamp])
+  @@index([accountId])
+}
+
+model WarmingConfig {
+  id    String @id @default(cuid())
+  key   String @unique
+  value String
+  
+  updatedAt DateTime @updatedAt
+}
+
+model BulkQueue {
+  id          String   @id @default(cuid())
+  accountId   String
+  phoneNumber String?
+  usePairing  Boolean  @default(false)
+  status      String   @default("pending") // pending, processing, completed, failed
+  error       String?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([status])
+}
