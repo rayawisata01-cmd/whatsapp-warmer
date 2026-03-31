@@ -3,6 +3,11 @@
  * 
  * IMPORTANT: Next.js API routes CANNOT handle WebSocket upgrades.
  * This custom server is REQUIRED for WebSocket support.
+ * 
+ * RECOMMENDATION: Use default /socket.io path (no /api/ prefix)
+ * This eliminates path rewrite complexity and reduces 404 errors.
+ * 
+ * FIXED: Proper WebSocket upgrade handling for Railway deployment
  */
 
 import { createServer } from 'http';
@@ -25,18 +30,15 @@ const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
 
 // Create proxy with proper error handling
+// FIXED: Using default /socket.io path (no /api/ prefix)
 const socketProxy = createProxyMiddleware({
   target: WHATSAPP_SERVICE_URL,
   changeOrigin: true,
   ws: true, // WebSocket support
   secure: false,
   
-  // Rewrite path
-  pathRewrite: (path: string) => {
-    const newPath = path.replace('/api/socket.io', '/socket.io');
-    console.log(`[Path Rewrite] ${path} → ${newPath}`);
-    return newPath;
-  },
+  // NO pathRewrite needed - using default /socket.io path
+  // This eliminates the complexity and potential 404 errors
   
   // Handle errors
   onError: (err, req, res) => {
@@ -64,7 +66,8 @@ const server = createServer(async (req, res) => {
     const { pathname } = parsedUrl;
 
     // Handle Socket.io requests - MUST come before Next.js handler
-    if (pathname?.startsWith('/api/socket.io')) {
+    // FIXED: Match both /socket.io and /api/socket.io for backward compatibility
+    if (pathname?.startsWith('/socket.io') || pathname?.startsWith('/api/socket.io')) {
       console.log(`[Incoming] Socket.io request: ${req.method} ${pathname}`);
       
       // Call proxy with proper callback pattern
@@ -95,8 +98,9 @@ const server = createServer(async (req, res) => {
 server.on('upgrade', (req, socket, head) => {
   const { pathname } = parse(req.url!, true);
   
-  if (pathname?.startsWith('/api/socket.io')) {
-    console.log(`[WS Upgrade] ${pathname}`);
+  // FIXED: Match both /socket.io and /api/socket.io for WebSocket upgrades
+  if (pathname?.startsWith('/socket.io') || pathname?.startsWith('/api/socket.io')) {
+    console.log(`[WS Upgrade] ${pathname} | Headers: Connection=${req.headers.connection}, Upgrade=${req.headers.upgrade}`);
     (socketProxy as any).upgrade(req, socket, head);
   } else {
     // Destroy other WebSocket upgrade requests
@@ -108,7 +112,7 @@ server.on('upgrade', (req, socket, head) => {
 app.prepare().then(() => {
   server.listen(port, hostname, () => {
     console.log(`\n🚀 Server ready at http://${hostname}:${port}`);
-    console.log(`📡 Socket.io proxy: /api/socket.io → ${WHATSAPP_SERVICE_URL}/socket.io`);
+    console.log(`📡 Socket.io proxy: /socket.io and /api/socket.io → ${WHATSAPP_SERVICE_URL}/socket.io`);
     console.log(`✅ WebSocket support: ENABLED\n`);
   });
 });

@@ -49,6 +49,10 @@ const io = new Server(httpServer, {
   upgradeTimeout: 10000, // 10 seconds to upgrade to WebSocket
   // Connection settings
   connectTimeout: 30000, // 30 seconds to establish connection
+  // Connection state recovery (Socket.io v4.7+) - helps with reconnection
+  connectionStateRecovery: {
+    skipMiddlewares: true,
+  },
 });
 
 const PORT = 3030;
@@ -2516,6 +2520,25 @@ async function startSession(accountId: string, usePairingCode: boolean = false, 
 
     // Register creds.update handler immediately
     socket.ev.on('creds.update', saveCreds);
+    
+    // Add logging for auth_failure events (critical for debugging)
+    socket.ev.on('connection.update', async (update) => {
+      const { connection, lastDisconnect } = update;
+      
+      // Log authentication failures explicitly
+      if (connection === 'close') {
+        const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
+        
+        if (statusCode === 401) {
+          console.error('[AUTH FAILURE] ❌ Authentication failed - session may be invalid or banned');
+          addLog('error', '🔐 Authentication failure - please reconnect WhatsApp', accountId);
+        } else if (statusCode === 403) {
+          console.error('[AUTH FAILURE] 🚫 Account banned by WhatsApp');
+          addLog('error', '🚫 Account banned (code 403)', accountId);
+        }
+      }
+    });
+    
     console.log('[SOCKET] ✅ Event handlers registered IMMEDIATELY');
 
     // ========== WEBSOCKET STATE DEBUGGING ==========
@@ -2874,7 +2897,15 @@ async function processBulkQueue() {
 }
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', accounts: accounts.size });
+  res.json({ 
+    status: 'ok', 
+    accounts: accounts.size,
+    socketio: {
+      path: '/socket.io',
+      transports: ['websocket', 'polling'],
+      connectionStateRecovery: true
+    }
+  });
 });
 
 // ==================== SAFE MODE ENDPOINTS ====================

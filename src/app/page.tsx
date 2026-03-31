@@ -348,12 +348,11 @@ export default function Dashboard() {
       if (isConnectingRef.current) return;
       isConnectingRef.current = true;
       
-      // FIXED: WebSocket-first configuration
-      // - Use websocket as primary transport, polling as fallback
-      // - Removed extraHeaders with 'Connection' - causes "Refused to set unsafe header" warning
-      // - Custom server handles WebSocket upgrade properly
+      // FIXED: Use default /socket.io path (no /api/ prefix)
+      // This eliminates path rewrite complexity and reduces 404 errors
+      // Server now handles both /socket.io and /api/socket.io for backward compatibility
       const socketOptions: any = {
-        path: '/api/socket.io',
+        path: '/socket.io', // Changed from '/api/socket.io' to default path
         transports: ['websocket', 'polling'], // WebSocket first, fallback to polling
         upgrade: true, // Allow upgrade to WebSocket
         reconnection: true,
@@ -369,7 +368,7 @@ export default function Dashboard() {
       const socketUrl = window.location.origin;
       console.log('[Socket.io] Connecting...', { 
         url: socketUrl, 
-        path: '/api/socket.io',
+        path: '/socket.io', // Updated path
         timeout: '25s',
         transports: ['websocket', 'polling']
       });
