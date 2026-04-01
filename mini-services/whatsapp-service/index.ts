@@ -4123,6 +4123,21 @@ app.post('/session/toggle-warming', (req, res) => {
   res.json({ success: true });
 });
 
+app.post('/session/toggle-warming-all', (req, res) => {
+  const { enabled } = req.body;
+  let count = 0;
+  
+  for (const [accountId, account] of accounts) {
+    if (account.status === 'online') {
+      toggleWarming(accountId, enabled);
+      count++;
+    }
+  }
+  
+  addLog('warming', `${enabled ? '✅' : '⏸️'} Warmer ${enabled ? 'enabled' : 'disabled'} for ${count} accounts`);
+  res.json({ success: true, count });
+});
+
 app.post('/pool/rotate', async (req, res) => {
   await rotatePools();
   res.json({ success: true });

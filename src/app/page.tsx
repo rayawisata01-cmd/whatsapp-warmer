@@ -54,6 +54,8 @@ import {
   Filter,
   Search,
   X,
+  Play,
+  Square,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -220,6 +222,7 @@ export default function Dashboard() {
   const [accountDetail, setAccountDetail] = useState<{ open: boolean; account: Account | null }>({ open: false, account: null });
   const [isDeleting, setIsDeleting] = useState(false);
   const [qrModal, setQrModal] = useState<{ open: boolean; qrCode: string; accountId: string }>({ open: false, qrCode: "", accountId: "" });
+  const [stopWarmingConfirm, setStopWarmingConfirm] = useState(false);
   
   // Bulk creation states
   const [addMode, setAddMode] = useState<"single" | "bulk" | "excel">("single");
@@ -838,6 +841,47 @@ export default function Dashboard() {
     }
   }, [toast]);
 
+  // Start Warmer for all accounts
+  const handleStartWarmingAll = useCallback(async () => {
+    try {
+      const response = await fetch("/api/wa/session/toggle-warming-all", {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: true })
+      });
+      
+      if (response.ok) {
+        toast({ title: "Warmer Started", description: "Warming enabled for all accounts" });
+        fetchAccounts();
+      } else {
+        toast({ title: "Error", description: "Failed to start warmer", variant: "destructive" });
+      }
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to start warmer", variant: "destructive" });
+    }
+  }, [toast, fetchAccounts]);
+
+  // Stop Warmer for all accounts
+  const handleStopWarmingAll = useCallback(async () => {
+    try {
+      const response = await fetch("/api/wa/session/toggle-warming-all", {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: false })
+      });
+      
+      if (response.ok) {
+        toast({ title: "Warmer Stopped", description: "Warming disabled for all accounts" });
+        fetchAccounts();
+      } else {
+        toast({ title: "Error", description: "Failed to stop warmer", variant: "destructive" });
+      }
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to stop warmer", variant: "destructive" });
+    }
+    setStopWarmingConfirm(false);
+  }, [toast, fetchAccounts]);
+
   // Retry Connection (for QR/Pairing issues)
   const handleRetryConnection = useCallback(async (accountId: string) => {
     try {
@@ -1416,6 +1460,21 @@ export default function Dashboard() {
                         <RotateCw className="h-4 w-4 mr-2" />
                         Rotate Pools
                       </Button>
+                      
+                      <div className="border-t border-slate-200 dark:border-slate-700 my-1" />
+                      
+                      <p className="text-xs text-slate-500 mb-1">Warmer Controls</p>
+                      <div className="flex gap-2">
+                        <Button onClick={handleStartWarmingAll} className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white">
+                          <Play className="h-4 w-4 mr-2" />
+                          Start All
+                        </Button>
+                        <Button onClick={() => setStopWarmingConfirm(true)} variant="destructive" className="flex-1">
+                          <Square className="h-4 w-4 mr-2" />
+                          Stop All
+                        </Button>
+                      </div>
+                      
                       <div className="p-3 rounded-lg bg-slate-100 dark:bg-slate-800 mt-2">
                         <p className="text-xs text-slate-500 mb-2">Pool Status</p>
                         <div className="flex gap-4">
@@ -2590,6 +2649,29 @@ export default function Dashboard() {
               <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
               <AlertDialogAction onClick={handleDeleteAccount} disabled={isDeleting} className="bg-red-500 hover:bg-red-600">
                 {isDeleting ? (<><Loader2 className="h-4 w-4 mr-2 animate-spin" />Deleting...</>) : "Delete Account"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Stop Warmer All Confirmation Dialog */}
+        <AlertDialog open={stopWarmingConfirm} onOpenChange={setStopWarmingConfirm}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-amber-500" />
+                Stop All Warming
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to <strong>stop warming for all accounts</strong>? 
+                This will disable auto-chat and message simulation for all online accounts.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={handleStopWarmingAll} className="bg-red-500 hover:bg-red-600">
+                <Square className="h-4 w-4 mr-2" />
+                Stop All Warming
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
