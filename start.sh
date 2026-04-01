@@ -43,12 +43,14 @@ fi
 # Start WhatsApp service
 echo "Starting WhatsApp service on port 3030..."
 
+# CRITICAL: Log to BOTH file AND stdout using tee
+# This ensures Railway captures logs while also keeping file backup
 if command -v unbuffer &> /dev/null; then
-    unbuffer npx tsx index.ts > /app/data/whatsapp-service.log 2>&1 &
+    unbuffer npx tsx index.ts 2>&1 | tee /app/data/whatsapp-service.log &
 elif command -v stdbuf &> /dev/null; then
-    stdbuf -oL -eL npx tsx index.ts > /app/data/whatsapp-service.log 2>&1 &
+    stdbuf -oL -eL npx tsx index.ts 2>&1 | tee /app/data/whatsapp-service.log &
 else
-    npx tsx index.ts > /app/data/whatsapp-service.log 2>&1 &
+    npx tsx index.ts 2>&1 | tee /app/data/whatsapp-service.log &
 fi
 WA_PID=$!
 echo "WhatsApp Service PID: $WA_PID"
@@ -108,7 +110,7 @@ echo ""
 cd /app
 
 echo "Starting Next.js server on port 3000..."
-npx tsx server.ts > /app/data/nextjs-server.log 2>&1 &
+npx tsx server.ts 2>&1 | tee /app/data/nextjs-server.log &
 NEXT_PID=$!
 echo "Next.js PID: $NEXT_PID"
 
@@ -198,15 +200,15 @@ while true; do
     if ! kill -0 $WA_PID 2>/dev/null; then
         echo "⚠️ WhatsApp service died, restarting..."
         cd /app/mini-services/whatsapp-service
-        npx tsx index.ts > /app/data/whatsapp-service.log 2>&1 &
+        npx tsx index.ts 2>&1 | tee /app/data/whatsapp-service.log &
         WA_PID=$!
     fi
-    
+
     # Check Next.js
     if ! kill -0 $NEXT_PID 2>/dev/null; then
         echo "⚠️ Next.js died, restarting..."
         cd /app
-        npx tsx server.ts > /app/data/nextjs-server.log 2>&1 &
+        npx tsx server.ts 2>&1 | tee /app/data/nextjs-server.log &
         NEXT_PID=$!
     fi
     

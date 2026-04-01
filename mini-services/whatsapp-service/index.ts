@@ -3418,6 +3418,189 @@ app.get('/logs', (req, res) => {
   res.json(eventLogs.slice(0, 100));
 });
 
+// ==================== DEBUG ENDPOINTS ====================
+// These help diagnose Railway issues
+
+// Read log file from disk
+app.get('/logs/file', async (req, res) => {
+  try {
+    const logPath = '/app/data/whatsapp-service.log';
+    const logContent = await readFile(logPath, 'utf-8');
+    const lines = logContent.split('\n').slice(-200); // Last 200 lines
+    res.json({
+      path: logPath,
+      lines: lines.length,
+      content: lines
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to read log file', message: error.message });
+  }
+});
+
+// Get connection states for all accounts
+app.get('/debug/connections', (req, res) => {
+  const connectionStates: any[] = [];
+
+  accounts.forEach((account, id) => {
+    const socket = account.socket;
+    const ws = (socket as any)?.ws;
+    const nativeWs = ws?.socket;
+
+    connectionStates.push({
+      accountId: id,
+      status: account.status,
+      pool: account.pool,
+      hasSocket: !!socket,
+      socketUser: socket?.user?.id || null,
+      // Baileys WebSocket state
+      wsExists: !!ws,
+      wsUrl: ws?.url || null,
+      wsIsConnecting: ws?.isConnecting || false,
+      wsIsOpen: ws?.isOpen || false,
+      wsIsClosed: ws?.isClosed || false,
+      // Native WebSocket state
+      nativeWsExists: !!nativeWs,
+      nativeWsState: nativeWs?.readyState,
+      nativeWsStateName: nativeWs?.readyState === 0 ? 'CONNECTING' :
+                         nativeWs?.readyState === 1 ? 'OPEN' :
+                         nativeWs?.readyState === 2 ? 'CLOSING' :
+                         nativeWs?.readyState === 3 ? 'CLOSED' : 'UNKNOWN',
+      // Reconnect tracking
+      reconnectAttempts: reconnectAttempts.get(id) || 0,
+      everConnected: everConnected.get(id) || false,
+      isBanned: BURNABLE_CONFIG.bannedAccounts.has(id),
+      // Timing
+      lastActivity: account.warmingStats?.lastActivity || null
+    });
+  });
+
+  res.json({
+    timestamp: new Date().toISOString(),
+    totalAccounts: accounts.size,
+    onlineCount: Array.from(accounts.values()).filter(a => a.status === 'online').length,
+    connectingCount: Array.from(accounts.values()).filter(a => a.status === 'connecting').length,
+    connections: connectionStates
+  });
+});
+
+// Get detailed debug info for one account
+app.get('/debug/account/:id', (req, res) => {
+  const account = accounts.get(req.params.id);
+  if (!account) {
+    return res.status(404).json({ error: 'Account not found' });
+  }
+
+  const socket = account.socket;
+  const ws = (socket as any)?.ws;
+  const nativeWs = ws?.socket;
+
+  res.json({
+    account: {
+      id: account.id,
+      status: account.status,
+      pool: account.pool,
+      phoneNumber: account.phoneNumber,
+      name: account.name,
+      qrCode: account.qrCode ? account.qrCode.substring(0, 50) + '...' : null,
+      pairingCode: account.pairingCode,
+      warmingEnabled: account.warmingEnabled,
+      personality: account.personality,
+      warmingStats: account.warmingStats,
+      silentPeriod: account.silentPeriod,
+      sessionActivity: account.sessionActivity
+    },
+    socket: {
+      exists: !!socket,
+      userId: socket?.user?.id || null,
+      userName: socket?.user?.name || null,
+      hasEv: !!socket?.ev
+    },
+    ws: {
+      exists: !!ws,
+      url: ws?.url || null,
+      isConnecting: ws?.isConnecting || false,
+      isOpen: ws?.isOpen || false,
+      isClosed: ws?.isClosed || false
+    },
+    nativeWs: {
+      exists: !!nativeWs,
+      readyState: nativeWs?.readyState,
+      readyStateName: nativeWs?.readyState === 0 ? 'CONNECTING' :
+                      nativeWs?.readyState === 1 ? 'OPEN' :
+                      nativeWs?.readyState === 2 ? 'CLOSING' :
+                      nativeWs?.readyState === 3 ? 'CLOSED' : 'UNKNOWN',
+      url: nativeWs?.url || null
+    },
+    tracking: {
+      reconnectAttempts: reconnectAttempts.get(req.params.id) || 0,
+      everConnected: everConnected.get(req.params.id) || false,
+      isBanned: BURNABLE_CONFIG.bannedAccounts.has(req.params.id),
+      isPendingDeletion: pendingDeletion.has(req.params.id)
+    }
+  });
+});
+
+// Force reconnect an account (for testing)
+app.post('/debug/force-reconnect/:id', async (req, res) => {
+  const accountId = req.params.id;
+  const account = accounts.get(accountId);
+
+  if (!account) {
+    return res.status(404).json({ error: 'Account not found' });
+  }
+
+  console.log(`[DEBUG] Force reconnect requested for ${accountId}`);
+
+  // Close existing socket
+  if (account.socket) {
+    try {
+      account.socket.end?.();
+    } catch (e) {
+      console.log('[DEBUG] Error closing socket:', e);
+    }
+  }
+
+  // Remove from accounts map
+  accounts.delete(accountId);
+
+  // Reset tracking
+  reconnectAttempts.set(accountId, 0);
+
+  // Start fresh session
+  setTimeout(async () => {
+    await startSession(accountId, false, undefined, true);
+  }, 1000);
+
+  res.json({ success: true, message: `Force reconnect initiated for ${accountId}` });
+});
+
+// Get system info
+app.get('/debug/system', (req, res) => {
+  res.json({
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    memory: process.memoryUsage(),
+    nodeVersion: process.version,
+    platform: process.platform,
+    arch: process.arch,
+    pid: process.pid,
+    env: {
+      NODE_ENV: process.env.NODE_ENV,
+      GROQ_API_KEY_SET: !!process.env.GROQ_API_KEY,
+      BAILEYS_LOG_LEVEL: process.env.BAILEYS_LOG_LEVEL || 'debug'
+    },
+    counts: {
+      accounts: accounts.size,
+      chatPairs: chatPairs.size,
+      eventLogs: eventLogs.length,
+      personalityPool: personalityPool.length,
+      reconnectAttempts: reconnectAttempts.size,
+      everConnected: everConnected.size,
+      bannedAccounts: BURNABLE_CONFIG.bannedAccounts.size
+    }
+  });
+});
+
 app.get('/config', (req, res) => {
   res.json(config);
 });
@@ -4293,3 +4476,68 @@ async function start() {
 }
 
 start();
+
+// ==================== CRITICAL ERROR HANDLERS ====================
+// These are ESSENTIAL for debugging Railway issues
+// Without these, errors cause silent crashes with no logs
+
+process.on('uncaughtException', (error: Error) => {
+  console.error('==========================================');
+  console.error('🚨 UNCAUGHT EXCEPTION - CRITICAL ERROR');
+  console.error('==========================================');
+  console.error('Error:', error.message);
+  console.error('Stack:', error.stack);
+  console.error('Time:', new Date().toISOString());
+  console.error('==========================================');
+  
+  // Log to event system
+  addLog('error', `🚨 UNCAUGHT EXCEPTION: ${error.message}`);
+  
+  // Don't exit immediately - let logs flush
+  setTimeout(() => {
+    process.exit(1);
+  }, 1000);
+});
+
+process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
+  console.error('==========================================');
+  console.error('🚨 UNHANDLED PROMISE REJECTION');
+  console.error('==========================================');
+  console.error('Reason:', reason);
+  console.error('Time:', new Date().toISOString());
+  console.error('==========================================');
+  
+  // Log to event system
+  const reasonStr = reason instanceof Error ? reason.message : String(reason);
+  addLog('error', `🚨 UNHANDLED REJECTION: ${reasonStr}`);
+});
+
+// Log when process is about to exit
+process.on('beforeExit', (code) => {
+  console.log('[PROCESS] About to exit with code:', code);
+});
+
+process.on('exit', (code) => {
+  console.log('[PROCESS] Exiting with code:', code);
+});
+
+// Handle termination signals gracefully
+process.on('SIGTERM', () => {
+  console.log('[PROCESS] SIGTERM received, shutting down gracefully...');
+  addLog('info', '🛑 SIGTERM received, shutting down');
+  httpServer.close(() => {
+    console.log('[PROCESS] Server closed');
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', () => {
+  console.log('[PROCESS] SIGINT received, shutting down gracefully...');
+  addLog('info', '🛑 SIGINT received, shutting down');
+  httpServer.close(() => {
+    console.log('[PROCESS] Server closed');
+    process.exit(0);
+  });
+});
+
+console.log('✅ Error handlers installed');
