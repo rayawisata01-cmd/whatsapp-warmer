@@ -1783,7 +1783,34 @@ export default function Dashboard() {
               </div>
 
               {/* Tier Summary Cards */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+                {/* All Accounts Card */}
+                <Card 
+                  className={cn(
+                    "relative overflow-hidden cursor-pointer transition-all duration-300 hover:scale-[1.02]",
+                    selectedTier === null && "ring-2 ring-offset-2 ring-offset-background ring-slate-400",
+                    "border-slate-200 dark:border-slate-700"
+                  )}
+                  onClick={() => setSelectedTier(null)}
+                >
+                  <div className="absolute inset-0 bg-gradient-to-br from-slate-500/5 to-slate-600/5" />
+                  <CardContent className="pt-4 pb-3">
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="p-2 rounded-lg bg-slate-100 dark:bg-slate-700">
+                        <Layers className="h-4 w-4 text-slate-600 dark:text-slate-300" />
+                      </div>
+                      <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                        All
+                      </span>
+                    </div>
+                    <p className="font-semibold text-slate-900 dark:text-white">Total</p>
+                    <p className="text-2xl font-bold mt-1 text-slate-900 dark:text-white">{accounts.length}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      All accounts
+                    </p>
+                  </CardContent>
+                </Card>
+
                 {[1, 2, 3, 4, 5].map((tier) => {
                   const tierInfo = getTierInfo(tier);
                   const tierStats = getTierStats();
