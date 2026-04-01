@@ -54,6 +54,7 @@ import {
   Filter,
   Search,
   X,
+  Sprout,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -1784,34 +1785,34 @@ export default function Dashboard() {
 
               {/* Tier Summary Cards */}
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-                {/* All Accounts Card */}
+                {/* Starter Card - Accounts with < 50 messages */}
                 <Card 
                   className={cn(
                     "relative overflow-hidden cursor-pointer transition-all duration-300 hover:scale-[1.02]",
-                    selectedTier === null && "ring-2 ring-offset-2 ring-offset-background ring-slate-400",
-                    "border-slate-200 dark:border-slate-700"
+                    selectedTier === 1 && "ring-2 ring-offset-2 ring-offset-background ring-emerald-400",
+                    "border-emerald-200 dark:border-emerald-500/30"
                   )}
-                  onClick={() => setSelectedTier(null)}
+                  onClick={() => setSelectedTier(selectedTier === 1 ? null : 1)}
                 >
-                  <div className="absolute inset-0 bg-gradient-to-br from-slate-500/5 to-slate-600/5" />
+                  <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-green-600/5" />
                   <CardContent className="pt-4 pb-3">
                     <div className="flex items-start justify-between mb-2">
-                      <div className="p-2 rounded-lg bg-slate-100 dark:bg-slate-700">
-                        <Layers className="h-4 w-4 text-slate-600 dark:text-slate-300" />
+                      <div className="p-2 rounded-lg bg-emerald-100 dark:bg-emerald-500/20">
+                        <Sprout className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                       </div>
-                      <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
-                        All
+                      <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400">
+                        New
                       </span>
                     </div>
-                    <p className="font-semibold text-slate-900 dark:text-white">Total</p>
-                    <p className="text-2xl font-bold mt-1 text-slate-900 dark:text-white">{accounts.length}</p>
+                    <p className="font-semibold text-slate-900 dark:text-white">Starter</p>
+                    <p className="text-2xl font-bold mt-1 text-slate-900 dark:text-white">{getTierStats()[1]}</p>
                     <p className="text-xs text-slate-500 dark:text-slate-400">
-                      All accounts
+                      0-50 msgs
                     </p>
                   </CardContent>
                 </Card>
 
-                {[1, 2, 3, 4, 5].map((tier) => {
+                {[2, 3, 4, 5].map((tier) => {
                   const tierInfo = getTierInfo(tier);
                   const tierStats = getTierStats();
                   const count = tierStats[tier as keyof typeof tierStats];
