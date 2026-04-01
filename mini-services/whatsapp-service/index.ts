@@ -411,6 +411,11 @@ const everConnected: Map<string, boolean> = new Map();
 // Track accounts that are being intentionally deleted (to prevent auto-reconnect)
 const pendingDeletion: Set<string> = new Set();
 
+// ==================== PAIRING SUCCESS TRACKING ====================
+// Track recent pairing success to avoid clearing credentials during reconnect
+const recentPairingSuccess: Map<string, { timestamp: Date; phoneNumber?: string }> = new Map();
+const PAIRING_SUCCESS_TTL_MS = 60000; // 60 seconds - pairing success is "recent" for this long
+
 // ==================== PERSONALITY TRACKING ====================
 // Track personalities to prevent regeneration even if account is deleted
 const personalityRegistry: Map<string, Personality> = new Map();
@@ -818,6 +823,9 @@ async function handleBannedAccount(accountId: string, reason?: string): Promise<
   
   // Remove from pending deletion if present
   pendingDeletion.delete(accountId);
+  
+  // Clear pairing success tracking
+  recentPairingSuccess.delete(accountId);
 
   // IMPORTANT: We do NOT delete from personalityRegistry
   // This prevents personality regeneration if startSession is somehow called again
@@ -2432,8 +2440,19 @@ async function startSession(accountId: string, usePairingCode: boolean = false, 
         account.status = 'online';
         account.pool = 'active';
         console.log('[CONNECTION] ✅ Successfully connected:', accountId);
-        addLog('info', `✅ WhatsApp connected successfully`, accountId);
-        io.emit('account-status', { accountId, status: 'online' });
+        
+        // Log if this was a new login (after QR scan/pairing)
+        if (isNewLogin) {
+          console.log('[CONNECTION] 🎉 NEW LOGIN - QR scan/pairing was successful!');
+          addLog('info', `🎉 WhatsApp connected - NEW LOGIN successful!`, accountId);
+        } else {
+          addLog('info', `✅ WhatsApp connected successfully`, accountId);
+        }
+        
+        io.emit('account-status', { accountId, status: 'online', isNewLogin });
+        
+        // Clear pairing success tracking since connection is now stable
+        recentPairingSuccess.delete(accountId);
         
         // Clear connection timeout
         const t = connectionTimeouts.get(accountId);
@@ -2551,24 +2570,43 @@ async function startSession(accountId: string, usePairingCode: boolean = false, 
         // ========================================
         // AUTO-RECONNECT FOR STREAM ERROR
         // ========================================
-        // Stream Errored needs faster reconnect with fresh session
+        // CRITICAL FIX: After successful QR scan/pairing, credentials are saved.
+        // Stream Error 515 happens right after pairing. We MUST NOT clear session!
+        // Check if this is right after pairing success.
+        const pairingInfo = recentPairingSuccess.get(accountId);
+        const timeSincePairing = pairingInfo ? Date.now() - pairingInfo.timestamp.getTime() : Infinity;
+        const isAfterPairingSuccess = timeSincePairing < PAIRING_SUCCESS_TTL_MS;
+        
+        console.log('[STREAM ERROR] Pairing info:', {
+          hasPairingInfo: !!pairingInfo,
+          timeSincePairing: timeSincePairing / 1000 + 's',
+          isAfterPairingSuccess,
+          isNewLogin
+        });
+        
         if (isStreamError) {
           const delay = Math.min(3000 * (currentAttemptCount + 1), 30000);
-          addLog('info', `🔄 Stream Error - Reconnecting in ${delay/1000}s...`, accountId);
+          
+          // CRITICAL: Don't clear session if pairing just succeeded!
+          // The credentials ARE saved, we just need to reconnect.
+          const shouldForceNew = !isAfterPairingSuccess && !isNewLogin;
+          
+          addLog('info', `🔄 Stream Error - Reconnecting in ${delay/1000}s... (forceNew: ${shouldForceNew}, afterPairing: ${isAfterPairingSuccess})`, accountId);
           
           // Emit reconnecting event for client
-          io.emit('reconnecting', { accountId, attempt: currentAttemptCount + 1 });
+          io.emit('reconnecting', { accountId, attempt: currentAttemptCount + 1, afterPairing: isAfterPairingSuccess });
           
           setTimeout(async () => {
             const currentAttempt = reconnectAttempts.get(accountId) || 0;
             if (currentAttempt < MAX_RECONNECT_ATTEMPTS) {
               reconnectAttempts.set(accountId, currentAttempt + 1);
               try {
-                // Force fresh session for Stream Error
-                await fetch(`http://localhost:3030/session/retry`, {
+                // Use /session/start endpoint which allows forceNew control
+                // CRITICAL FIX: Use correct URL with accountId in path
+                await fetch(`http://localhost:3030/session/start`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ accountId, forceNew: true })
+                  body: JSON.stringify({ accountId, forceNew: shouldForceNew })
                 });
               } catch (e) {
                 console.error('[RECONNECT] Failed to trigger reconnect:', e);
@@ -2588,8 +2626,9 @@ async function startSession(accountId: string, usePairingCode: boolean = false, 
             if (currentAttempt < MAX_RECONNECT_ATTEMPTS) {
               reconnectAttempts.set(accountId, currentAttempt + 1);
               // Trigger reconnect via API
+              // CRITICAL FIX: Use correct endpoint /session/start with accountId in body
               try {
-                await fetch(`http://localhost:3030/session/retry`, {
+                await fetch(`http://localhost:3030/session/start`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ accountId, forceNew: statusCode === 401 })
@@ -2604,7 +2643,22 @@ async function startSession(accountId: string, usePairingCode: boolean = false, 
     });
 
     // Register creds.update handler immediately
-    socket.ev.on('creds.update', saveCreds);
+    // CRITICAL: Also track when pairing succeeds for Stream Error handling
+    socket.ev.on('creds.update', async (update) => {
+      await saveCreds(update);
+      
+      // Track when new credentials are saved (indicating successful pairing)
+      // This is crucial for Stream Error 515 handling - we must not clear session
+      // if pairing just succeeded!
+      if (update.me && update.me.id) {
+        console.log('[CREDS] ✅ Credentials saved with user ID:', update.me.id);
+        recentPairingSuccess.set(accountId, {
+          timestamp: new Date(),
+          phoneNumber: update.me.id.split('@')[0]
+        });
+        addLog('info', `🔐 Credentials saved - pairing successful for ${accountId}`, accountId);
+      }
+    });
     console.log('[SOCKET] ✅ Event handlers registered IMMEDIATELY');
 
     // ========== WEBSOCKET STATE DEBUGGING ==========
@@ -2895,6 +2949,9 @@ async function stopSession(accountId: string) {
     clearTimeout(connTimeout);
     connectionTimeouts.delete(accountId);
   }
+  
+  // Clear pairing success tracking
+  recentPairingSuccess.delete(accountId);
 }
 
 function toggleWarming(accountId: string, enabled: boolean) {
