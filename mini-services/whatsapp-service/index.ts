@@ -2596,6 +2596,18 @@ async function startSession(accountId: string, usePairingCode: boolean = false, 
           // Emit reconnecting event for client
           io.emit('reconnecting', { accountId, attempt: currentAttemptCount + 1, afterPairing: isAfterPairingSuccess });
           
+          // ========================================
+          // CRITICAL FIX: Delete from memory to allow API to accept reconnect
+          // ========================================
+          // The API rejects if account already exists in memory.
+          // We need to delete from memory BUT keep:
+          // - Session files (credentials) on disk
+          // - Personality registry in memory
+          // - Database records
+          console.log('[STREAM ERROR] Deleting account from memory to allow reconnect:', accountId);
+          accounts.delete(accountId);
+          console.log('[STREAM ERROR] Account deleted from memory. Session files and personality preserved.');
+          
           setTimeout(async () => {
             const currentAttempt = reconnectAttempts.get(accountId) || 0;
             if (currentAttempt < MAX_RECONNECT_ATTEMPTS) {
@@ -2603,6 +2615,7 @@ async function startSession(accountId: string, usePairingCode: boolean = false, 
               try {
                 // Use /session/start endpoint which allows forceNew control
                 // CRITICAL FIX: Use correct URL with accountId in path
+                // forceNew: false means we keep session files and use saved credentials
                 await fetch(`http://localhost:3030/session/start`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
@@ -2620,6 +2633,10 @@ async function startSession(accountId: string, usePairingCode: boolean = false, 
         if (isTemporaryCode || statusCode === 401) {
           const delay = Math.min(5000 * (currentAttemptCount + 1), 60000);
           addLog('info', `🔄 Reconnecting in ${delay/1000}s...`, accountId);
+          
+          // Delete from memory to allow API to accept reconnect
+          console.log('[TEMP ERROR] Deleting account from memory to allow reconnect:', accountId);
+          accounts.delete(accountId);
           
           setTimeout(async () => {
             const currentAttempt = reconnectAttempts.get(accountId) || 0;
