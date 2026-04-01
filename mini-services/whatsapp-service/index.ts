@@ -615,6 +615,24 @@ function getSafeResponseDelay(): number {
   return getRandomInt(minMs, maxMs);
 }
 
+// Get auto-reply delay based on pool status
+// Active pool: faster response (10-60 min)
+// Idle pool: slower response (30-180 min) - user is "busy"
+// Offline pool: no auto-reply
+function getAutoReplyDelay(account: Account): number {
+  if (account.pool === 'active') {
+    // Active pool: 10-60 menit (responsive)
+    return getSafeResponseDelay();
+  } else if (account.pool === 'idle') {
+    // Idle pool: 30-180 menit (slower - like busy person)
+    const minMs = 30 * 60 * 1000;   // 30 menit
+    const maxMs = 180 * 60 * 1000;  // 3 jam
+    return getRandomInt(minMs, maxMs);
+  }
+  // Offline pool: tidak ada auto-reply
+  return -1;
+}
+
 // Get count of currently online accounts
 function getOnlineAccountCount(): number {
   return Array.from(accounts.values()).filter(a => a.status === 'online').length;
@@ -1336,7 +1354,8 @@ async function assignAccountToPool(account: Account, pool: Account['pool']) {
   }
   
   if (pool === 'active' && config.chatSimulationEnabled) {
-    await findChatPartner(account);
+    // Use retry mechanism to handle socket.user.id not ready after reconnect
+    await findChatPartnerWithRetry(account);
   }
   
   if (oldPool === 'active' && pool !== 'active') {
@@ -1408,19 +1427,58 @@ function scheduleNextRotation() {
 
 // ==================== CHAT PAIRING ====================
 
+// Retry mechanism for finding chat partner (handles socket.user.id not ready after reconnect)
+async function findChatPartnerWithRetry(account: Account, retries = 3): Promise<string | null> {
+  for (let i = 0; i < retries; i++) {
+    if (account.socket?.user?.id) {
+      return await findChatPartner(account);
+    }
+    addLog('info', `⏳ Waiting for socket.user.id... (${i + 1}/${retries})`, account.id);
+    await delay(5000 * (i + 1)); // Progressive delay: 5, 10, 15 seconds
+  }
+  addLog('warning', `❌ Cannot find partner after ${retries} retries: socket.user.id not ready`, account.id);
+  return null;
+}
+
 async function findChatPartner(account: Account): Promise<string | null> {
-  if (!config.chatSimulationEnabled) return null;
+  if (!config.chatSimulationEnabled) {
+    addLog('info', `⚠️ Chat simulation disabled`, account.id);
+    return null;
+  }
   
-  const activeAccounts = getActiveAccounts().filter(a => 
+  // Get all active accounts for debugging
+  const allActive = getActiveAccounts();
+  
+  // Filter for eligible partners
+  const eligiblePartners = allActive.filter(a => 
     a.id !== account.id && 
     !a.currentChatPartner &&
     account.socket?.user?.id &&
     a.socket?.user?.id
   );
   
-  if (activeAccounts.length === 0) return null;
+  // Debug logging
+  addLog('info', `🔍 Finding partner for ${account.personality?.name || account.id}: ${eligiblePartners.length}/${allActive.length} candidates available`);
   
-  const partner = getRandomItem(activeAccounts);
+  if (eligiblePartners.length === 0) {
+    // Log why no candidates
+    if (allActive.length <= 1) {
+      addLog('warming', `⚠️ Not enough active accounts for chat (need at least 2)`, account.id);
+    } else {
+      const reasons = allActive
+        .filter(a => a.id !== account.id)
+        .map(a => {
+          const r = [];
+          if (a.currentChatPartner) r.push('has partner');
+          if (!a.socket?.user?.id) r.push('no socket.user.id');
+          return `${a.personality?.name || a.id}: ${r.join(', ') || 'unknown'}`;
+        });
+      addLog('warning', `❌ No partner available. Reasons: ${reasons.join('; ')}`, account.id);
+    }
+    return null;
+  }
+  
+  const partner = getRandomItem(eligiblePartners);
   
   account.currentChatPartner = partner.id;
   partner.currentChatPartner = account.id;
@@ -1545,13 +1603,13 @@ async function endConversationNaturally(pair: ChatPair, account1: Account, accou
   
   setTimeout(async () => {
     if (account1.pool === 'active' && account1.status === 'online') {
-      await findChatPartner(account1);
+      await findChatPartnerWithRetry(account1);
     }
   }, delay1);
   
   setTimeout(async () => {
     if (account2.pool === 'active' && account2.status === 'online') {
-      await findChatPartner(account2);
+      await findChatPartnerWithRetry(account2);
     }
   }, delay2);
 }
@@ -2860,8 +2918,8 @@ async function startSession(accountId: string, usePairingCode: boolean = false, 
         
         io.emit('warming-stats', { accountId, stats: account.warmingStats });
 
-        // Auto-reply only for active pool accounts
-        if (account.warmingEnabled && config.warmerEnabled && account.pool === 'active') {
+        // Auto-reply for active AND idle pool accounts (with different delays)
+        if (account.warmingEnabled && config.warmerEnabled && account.pool !== 'offline') {
           // Check rate limit
           const rateCheck = checkRateLimit(account);
           if (!rateCheck.allowed) {
@@ -2869,14 +2927,25 @@ async function startSession(accountId: string, usePairingCode: boolean = false, 
             continue;
           }
           
-          const responseDelay = getRandomDelay();
-          const delayMinutes = Math.round(responseDelay / 60000);
+          // Get delay based on pool status (active: faster, idle: slower)
+          const responseDelay = getAutoReplyDelay(account);
+          if (responseDelay < 0) {
+            addLog('warming', `⏸️ Auto-reply skipped: account in offline pool`, accountId);
+            continue;
+          }
           
-          addLog('warming', `⏳ Auto-reply scheduled in ${delayMinutes} min`, accountId);
+          const delayMinutes = Math.round(responseDelay / 60000);
+          const poolLabel = account.pool === 'active' ? '⚡ Active' : '😴 Idle';
+          
+          addLog('warming', `⏳ Auto-reply scheduled in ${delayMinutes} min (${poolLabel} pool)`, accountId);
 
           const timeout = setTimeout(async () => {
             try {
-              if (account.status !== 'online' || account.pool !== 'active') return;
+              // Check if still online and warming enabled
+              if (account.status !== 'online' || !account.warmingEnabled) {
+                addLog('warming', `⏸️ Auto-reply cancelled: account offline or warming disabled`, accountId);
+                return;
+              }
               
               // Double check rate limit
               const rateCheckInner = checkRateLimit(account);
