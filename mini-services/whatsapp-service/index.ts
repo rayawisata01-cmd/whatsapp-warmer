@@ -1355,7 +1355,8 @@ async function rotatePools() {
   addLog('info', `🔄 Starting pool rotation for ${onlineAccounts.length} accounts`);
   
   const totalOnline = onlineAccounts.length;
-  const targetActive = Math.min(config.activePoolSize, Math.ceil(totalOnline * 0.3));
+  // FIX: Force minimum 2 active accounts so chat can happen (need at least 2 to chat)
+  const targetActive = Math.max(2, Math.min(config.activePoolSize, Math.ceil(totalOnline * 0.3)));
   const targetIdle = Math.min(config.idlePoolSize, Math.ceil(totalOnline * 0.5));
   
   const shuffled = shuffleArray(onlineAccounts);
