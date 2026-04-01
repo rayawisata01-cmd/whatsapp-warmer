@@ -1893,6 +1893,14 @@ Make each personality unique and diverse.`;
             if (!p.chronotype) {
               p.chronotype = chronotypes[Math.floor(Math.random() * chronotypes.length)];
             }
+            // FIX: Also assign active hours from CHRONOTYPE_CONFIGS
+            // This was missing, causing all personalities to show "12 AM - 12 AM"
+            const config = CHRONOTYPE_CONFIGS[p.chronotype as keyof typeof CHRONOTYPE_CONFIGS];
+            if (config) {
+              p.activeHoursStart = config.activeHoursStart;
+              p.activeHoursEnd = config.activeHoursEnd;
+              p.peakHours = config.peakHours;
+            }
           });
 
           personalityPool.push(...toAdd);
