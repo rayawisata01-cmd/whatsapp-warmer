@@ -1,0 +1,7 @@
+{
+  "volume": {
+    "name": "whatsapp-sessions",
+    "mountPath": "/app/mini-services/whatsapp-service/sessions",
+    "sizeGB": 1
+  }
+}

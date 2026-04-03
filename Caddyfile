@@ -1,0 +1,128 @@
+# Caddyfile for WhatsApp Warmer
+# ========================================
+# Railway uses its own edge proxy
+# This file is for local development and reference
+# ========================================
+
+# For Railway, use {$DOMAIN} or $PORT variable
+{$DOMAIN:":81"} {
+	# ========================================
+	# SOCKET.IO WEBSOCKET (PRIORITY)
+	# ========================================
+	# CRITICAL: Handle WebSocket upgrade FIRST
+	# This prevents Stream Errored issues on Railway
+	
+	@socketio_ws {
+		path /socket.io*
+		header Connection *Upgrade*
+		header Upgrade *websocket*
+	}
+	handle @socketio_ws {
+		reverse_proxy localhost:3000 {
+			# Forward WebSocket upgrade headers
+			header_up Host {host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+			header_up Connection {>Connection}
+			header_up Upgrade {>Upgrade}
+			
+			# Disable buffering for real-time
+			flush_interval -1
+		}
+	}
+
+	# ========================================
+	# SOCKET.IO POLLING (FALLBACK)
+	# ========================================
+	# Long-polling fallback for Socket.io
+	
+	@socketio_polling path /socket.io*
+	handle @socketio_polling {
+		reverse_proxy localhost:3000 {
+			header_up Host {host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+			flush_interval -1
+		}
+	}
+
+	# ========================================
+	# LEGACY: /api/socket.io (COMPAT)
+	# ========================================
+	# Support old path for backward compatibility
+	
+	@socketio_api_ws {
+		path /api/socket.io*
+		header Connection *Upgrade*
+		header Upgrade *websocket*
+	}
+	handle @socketio_api_ws {
+		reverse_proxy localhost:3000 {
+			header_up Host {host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+			header_up Connection {>Connection}
+			header_up Upgrade {>Upgrade}
+			flush_interval -1
+		}
+	}
+	
+	@socketio_api path /api/socket.io*
+	handle @socketio_api {
+		reverse_proxy localhost:3000 {
+			header_up Host {host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+			flush_interval -1
+		}
+	}
+
+	# ========================================
+	# MINI-SERVICES WITH XTransformPort
+	# ========================================
+	# Generic handler for mini-services
+	
+	@transform_port_ws {
+		query XTransformPort=*
+		header Connection *Upgrade*
+		header Upgrade *websocket*
+	}
+	handle @transform_port_ws {
+		reverse_proxy localhost:{query.XTransformPort} {
+			header_up Host {host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+			header_up Connection {>Connection}
+			header_up Upgrade {>Upgrade}
+			flush_interval -1
+		}
+	}
+	
+	@transform_port query XTransformPort=*
+	handle @transform_port {
+		reverse_proxy localhost:{query.XTransformPort} {
+			header_up Host {host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	# ========================================
+	# DEFAULT - NEXT.JS
+	# ========================================
+	
+	handle {
+		reverse_proxy localhost:3000 {
+			header_up Host {host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+}
