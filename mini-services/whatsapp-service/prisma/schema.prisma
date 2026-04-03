@@ -1,3 +1,6 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/cli/prisma-schema
+
 generator client {
   provider = "prisma-client-js"
   output   = "../node_modules/.prisma/client"
@@ -28,8 +31,8 @@ model Post {
 
 // ==================== WHATSAPP WARMER MODELS ====================
 
-// WhatsApp Session - for storing Baileys auth state in database
-// This is CRITICAL for Railway free tier where volumes are not available
+// WhatsApp Session - stores Baileys auth credentials in database
+// Critical for Railway free tier where volumes are not available
 model WhatsAppSession {
   id          String   @id @default(cuid())
   accountId   String   @unique
@@ -37,7 +40,7 @@ model WhatsAppSession {
   
   // Baileys auth state
   creds       String   // JSON: AuthenticationCreds
-  keys        String   // JSON: Signal keys
+  keys        String   @default("{}") // JSON: Signal keys
   
   // Metadata
   lastSync    DateTime?
@@ -90,6 +93,7 @@ model WhatsAppAccount {
   recvMessages  Message[]  @relation("RecvMessages")
   chatPairs1    ChatPair[] @relation("ChatPair1")
   chatPairs2    ChatPair[] @relation("ChatPair2")
+  eventLogs     EventLog[]
 
   @@index([status])
   @@index([pool])
@@ -101,7 +105,6 @@ model Personality {
   account      WhatsAppAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
   
   // Phone number for persistent lookup across reconnects
-  // Same phone = same personality even if accountId changes
   phoneNumber    String? @unique
   
   name           String
@@ -123,6 +126,9 @@ model Personality {
   avgResponseTime  Int     @default(5)  // minutes
   emojiUsage       String  @default("moderate") // heavy, moderate, minimal
   avgMessageLength String  @default("medium") // short, medium, long
+  
+  // Chat initiation behavior
+  isInitiator     Boolean @default(true) // true = proactive, likes to start conversations
   
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -189,14 +195,14 @@ model Message {
 
 model EventLog {
   id        String   @id @default(cuid())
-  accountId String?  // Just store the ID as string, no foreign key relation
+  accountId String?
+  account   WhatsAppAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
   
   type      String   // message, connection, error, info, warming, pool, backup, ratelimit
   message   String
   timestamp DateTime @default(now())
   
   @@index([timestamp])
-  @@index([accountId])
 }
 
 model WarmingConfig {

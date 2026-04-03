@@ -33,8 +33,8 @@ model Post {
 
 // ==================== WHATSAPP WARMER MODELS ====================
 
-// WhatsApp Session - for storing Baileys auth state in database
-// This is CRITICAL for Railway free tier where volumes are not available
+// WhatsApp Session - stores Baileys auth credentials in database
+// Critical for Railway free tier where volumes are not available
 model WhatsAppSession {
   id          String   @id @default(cuid())
   accountId   String   @unique
@@ -42,7 +42,7 @@ model WhatsAppSession {
   
   // Baileys auth state
   creds       String   // JSON: AuthenticationCreds
-  keys        String   // JSON: Signal keys
+  keys        String   @default("{}") // JSON: Signal keys
   
   // Metadata
   lastSync    DateTime?
@@ -107,7 +107,6 @@ model Personality {
   account      WhatsAppAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
   
   // Phone number for persistent lookup across reconnects
-  // Same phone = same personality even if accountId changes
   phoneNumber    String? @unique
   
   name           String
