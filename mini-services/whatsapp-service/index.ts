@@ -3,6 +3,7 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import {
   makeWASocket,
+  useMultiFileAuthState,
   DisconnectReason,
   fetchLatestBaileysVersion,
   Browsers,
@@ -13,7 +14,8 @@ import {
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import QRCode from 'qrcode';
-import { writeFile, readFile } from 'fs/promises';
+import { mkdir, writeFile, readFile, access, readdir, copyFile, stat, rm } from 'fs/promises';
+import { rimraf } from 'rimraf';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 // ZAI removed - using Groq only
@@ -21,7 +23,6 @@ import Groq from 'groq-sdk';
 import multer from 'multer';
 import * as XLSX from 'xlsx';
 import { db } from './db.js';
-import { useDatabaseAuthState, loadAllSessionsFromDB, getPhoneFromSession, updateSessionPhone } from './auth-state-db.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -92,7 +93,8 @@ io.on('connection', (socket) => {
 });
 
 const PORT = 3030;
-// Note: Sessions are now stored in PostgreSQL database, not files
+const SESSIONS_DIR = join(__dirname, 'sessions');
+const BACKUP_DIR = join(__dirname, 'backups');
 
 // Logger configuration - set to 'debug' for troubleshooting
 // Railway needs debug logs to diagnose connection issues
@@ -152,8 +154,6 @@ interface Personality {
   avgResponseTime: number; // minutes
   emojiUsage: 'heavy' | 'moderate' | 'minimal';
   avgMessageLength: 'short' | 'medium' | 'long';
-  // Chat initiation behavior
-  isInitiator: boolean; // true = likes to start chat, false = prefers to wait
 }
 
 interface ChatPair {
@@ -162,8 +162,6 @@ interface ChatPair {
   startedAt: Date;
   lastMessageAt?: Date;
   messageCount: number;
-  // Introduction system - track if first introduction is done
-  introductionDone: boolean; // Has the initial greeting been sent?
   // Topic system
   currentTopic: string;
   topicCategory: string;
@@ -420,13 +418,7 @@ const PAIRING_SUCCESS_TTL_MS = 60000; // 60 seconds - pairing success is "recent
 
 // ==================== PERSONALITY TRACKING ====================
 // Track personalities to prevent regeneration even if account is deleted
-// personalityRegistry: by accountId (legacy, for backward compatibility)
 const personalityRegistry: Map<string, Personality> = new Map();
-// personalityByPhone: by phone number (primary, for reconnection persistence)
-// This ensures the same phone number always gets the same personality
-const personalityByPhone: Map<string, Personality> = new Map();
-// phoneToAccountId: maps phone number to last known accountId
-const phoneToAccountId: Map<string, string> = new Map();
 
 // ==================== SAFE MODE CONFIGURATION ====================
 // Safe Mode: Mengurangi risiko banned dengan intensitas sangat rendah
@@ -891,32 +883,6 @@ function getBurnableStats() {
   };
 }
 
-// ==================== INTRODUCTION MESSAGES ====================
-// First message sent when starting a conversation with a "stranger"
-// These are natural, polite introduction messages that won't trigger spam detection
-
-const INTRODUCTION_MESSAGES = [
-  'Halo, salam kenal ya!',
-  'Hi! Apa kabar?',
-  'Permisi, boleh kenalan?',
-  'Halo, senang bisa kenal kamu!',
-  'Hi, salam kenal!',
-  'Halo! Nama aku boleh kenalan ga?',
-  'Hi! Boleh chat sebentar?',
-  'Halo, maaf ganggu. Salam kenal!',
-  'Hi, lagi sibuk ga? Boleh kenalan?',
-  'Halo! Salam kenal dari aku ya'
-];
-
-// Messages to ask for name/info after introduction
-const FOLLOW_UP_INTRODUCTION = [
-  'Nama kamu siapa?',
-  'Btw nama kamu siapa ya?',
-  'Kalau boleh tau nama kamu apa?',
-  'Kenalan dong, nama aku boleh tau nama kamu?',
-  'Oh iya, lupa kenalan. Nama kamu siapa?'
-];
-
 // ==================== TOPIC SYSTEM ====================
 
 const TOPIC_CATEGORIES = {
@@ -1283,26 +1249,74 @@ function incrementRateLimit(account: Account) {
 }
 
 // ==================== BACKUP SYSTEM ====================
-// Note: With database-based session storage, backup is handled by PostgreSQL
-// The database already provides persistence and reliability
 
 async function ensureBackupDir() {
-  // No longer needed - database handles persistence
+  try {
+    await access(BACKUP_DIR);
+  } catch {
+    await mkdir(BACKUP_DIR, { recursive: true });
+  }
 }
 
 async function backupSession(accountId: string) {
-  // Session is already stored in PostgreSQL database
-  // PostgreSQL handles persistence and backup automatically
-  addLog('backup', `✅ Session already persisted in database`, accountId);
+  try {
+    const sessionDir = join(SESSIONS_DIR, accountId);
+    const backupAccountDir = join(BACKUP_DIR, accountId);
+    
+    // Check if session exists
+    try {
+      await access(sessionDir);
+    } catch {
+      return; // No session to backup
+    }
+
+    // Create backup directory
+    await mkdir(backupAccountDir, { recursive: true });
+
+    // Copy all session files
+    const files = await readdir(sessionDir);
+    for (const file of files) {
+      const srcPath = join(sessionDir, file);
+      const destPath = join(backupAccountDir, file);
+      await copyFile(srcPath, destPath);
+    }
+
+    addLog('backup', `✅ Session backed up successfully`, accountId);
+  } catch (error) {
+    addLog('error', `❌ Backup failed: ${error}`, accountId);
+  }
 }
 
 async function backupAllSessions() {
-  addLog('backup', '✅ All sessions already persisted in PostgreSQL database');
+  addLog('backup', '🔄 Starting scheduled backup for all sessions...');
+  
+  const accountList = Array.from(accounts.keys());
+  let successCount = 0;
+
+  for (const accountId of accountList) {
+    await backupSession(accountId);
+    successCount++;
+    // Small delay to avoid I/O overload
+    await delay(100);
+  }
+
+  addLog('backup', `✅ Backup complete: ${successCount} sessions backed up`);
 }
 
 function scheduleAutoBackup() {
-  // No longer needed - database handles persistence
-  addLog('info', `💾 Sessions are automatically persisted in PostgreSQL database`);
+  if (backupTimer) {
+    clearInterval(backupTimer);
+  }
+
+  if (config.autoBackupEnabled) {
+    const interval = config.backupIntervalHours * 60 * 60 * 1000;
+    
+    backupTimer = setInterval(() => {
+      backupAllSessions();
+    }, interval);
+
+    addLog('info', `💾 Auto-backup scheduled every ${config.backupIntervalHours} hours`);
+  }
 }
 
 // ==================== POOL MANAGEMENT ====================
@@ -1454,7 +1468,7 @@ async function findChatPartner(account: Account): Promise<string | null> {
       const reasons = allActive
         .filter(a => a.id !== account.id)
         .map(a => {
-          const r: string[] = [];
+          const r = [];
           if (a.currentChatPartner) r.push('has partner');
           if (!a.socket?.user?.id) r.push('no socket.user.id');
           return `${a.personality?.name || a.id}: ${r.join(', ') || 'unknown'}`;
@@ -1472,33 +1486,20 @@ async function findChatPartner(account: Account): Promise<string | null> {
   // Find shared interests
   const sharedInterests = findSharedInterests(account.personality, partner.personality);
   
-  // ========== INTRODUCTION-BASED FIRST MESSAGE ==========
-  // For new pairs (strangers), start with introduction message instead of random topic
-  // This is more natural and less likely to trigger spam detection
-  const introductionMessage = getRandomItem(INTRODUCTION_MESSAGES);
+  // Generate initial topic
+  const initialTopic = {
+    topic: getRandomItem(TOPIC_CATEGORIES.daily_life.topics),
+    category: TOPIC_CATEGORIES.daily_life.name
+  };
   
-  // ========== DETERMINISTIC PAIR ID ==========
-  // Use alphabetical order to ensure consistent pair ID
-  // This prevents race condition where both A-B and B-A pairs are created
-  const [id1, id2] = [account.id, partner.id].sort();
-  const pairId = `${id1}-${id2}`;
-  
-  // Check if pair already exists (race condition protection)
-  if (chatPairs.has(pairId)) {
-    addLog('warning', `⚠️ Pair ${pairId} already exists, skipping duplicate creation`, account.id);
-    return partner.id;
-  }
-  
+  const pairId = `${account.id}-${partner.id}`;
   const newPair: ChatPair = {
-    account1Id: id1,  // Always the "smaller" ID
-    account2Id: id2,  // Always the "larger" ID
+    account1Id: account.id,
+    account2Id: partner.id,
     startedAt: new Date(),
     messageCount: 0,
-    // Introduction system
-    introductionDone: false,  // Will be set to true after first greeting
-    // Topic system - start with introduction, will transition to topics later
-    currentTopic: introductionMessage,  // Use introduction message as first "topic"
-    topicCategory: 'Perkenalan',
+    currentTopic: initialTopic.topic,
+    topicCategory: initialTopic.category,
     topicStartedAt: new Date(),
     topicsDiscussed: [],
     conversationContext: [],
@@ -1513,79 +1514,13 @@ async function findChatPartner(account: Account): Promise<string | null> {
   };
   chatPairs.set(pairId, newPair);
   
-  addLog('warming', `💕 Chat pair created: ${account.personality?.name || account.id} ↔ ${partner.personality?.name || partner.id} | First message: "${introductionMessage}"`);
-  
-  // ========== PERSONALITY-BASED INITIATOR ==========
-  // Determine who initiates based on personality.isInitiator
-  // with fallback to ID for tie-breaker
-  const initiatorAccount = determineInitiator(account, partner);
-  const receiverAccount = initiatorAccount.id === account.id ? partner : account;
-  
-  addLog('info', `🎯 ${initiatorAccount.personality?.name || initiatorAccount.id} will initiate (isInitiator: ${initiatorAccount.personality?.isInitiator})`);
-  
-  // ========== LONGER DELAY FOR FIRST MESSAGE ==========
-  // Use 5-15 minutes instead of 30-120 seconds to appear more natural
-  // This gives the account time to "settle" before starting a conversation
-  const firstMessageDelay = getRandomInt(5 * 60 * 1000, 15 * 60 * 1000); // 5-15 minutes
-  addLog('info', `⏰ First message scheduled in ${Math.round(firstMessageDelay / 60000)} minutes`);
+  addLog('warming', `💕 Chat pair created: ${account.personality?.name || account.id} ↔ ${partner.personality?.name || partner.id} | Topic: "${initialTopic.topic}"`);
   
   setTimeout(() => {
-    initiateChatSimulation(initiatorAccount, receiverAccount);
-  }, firstMessageDelay);
+    initiateChatSimulation(account, partner);
+  }, getRandomInt(30000, 120000));
   
   return partner.id;
-}
-
-// Determine who initiates chat based on personality and active window
-function determineInitiator(account1: Account, account2: Account): Account {
-  const p1 = account1.personality;
-  const p2 = account2.personality;
-  
-  // Get base initiator status from personality
-  let is1Initiator = p1?.isInitiator ?? Math.random() > 0.5;
-  let is2Initiator = p2?.isInitiator ?? Math.random() > 0.5;
-  
-  // Modifier: If in early active window, more likely to initiate
-  // (just "woke up" and eager to chat)
-  if (isInEarlyActiveWindow(p1)) is1Initiator = true;
-  if (isInEarlyActiveWindow(p2)) is2Initiator = true;
-  
-  // Determine initiator
-  if (is1Initiator && !is2Initiator) {
-    return account1;  // A is initiator, B is not
-  } else if (!is1Initiator && is2Initiator) {
-    return account2;  // B is initiator, A is not
-  } else {
-    // Both same (true-true or false-false), use ID as fallback
-    return account1.id < account2.id ? account1 : account2;
-  }
-}
-
-// Check if personality is in early part of active window (eager to chat)
-function isInEarlyActiveWindow(personality: Personality | null): boolean {
-  if (!personality) return false;
-  
-  const now = new Date();
-  const currentHour = now.getHours();
-  const { activeHoursStart, activeHoursEnd } = personality;
-  
-  // Calculate if we're in the first 2 hours of active window
-  let windowStart: number;
-  
-  if (activeHoursStart > activeHoursEnd) {
-    // Overnight schedule (e.g., 22:00 - 02:00)
-    if (currentHour >= activeHoursStart) {
-      windowStart = activeHoursStart;
-    } else {
-      windowStart = activeHoursStart - 24; // Previous day
-    }
-  } else {
-    windowStart = activeHoursStart;
-  }
-  
-  // Check if within first 2 hours of active window
-  const hoursSinceStart = (currentHour - windowStart + 24) % 24;
-  return hoursSinceStart < 2;
 }
 
 function clearChatPartner(accountId: string) {
@@ -1654,9 +1589,8 @@ function shouldConversationEnd(pair: ChatPair, sender: Account): { end: boolean;
 async function endConversationNaturally(pair: ChatPair, account1: Account, account2: Account, reason: string) {
   addLog('warming', ` 🔚 Conversation ended naturally: ${account1.personality?.name || account1.id} ↔ ${account2.personality?.name || account2.id} | ${reason}`);
   
-  // Clear the pair - use deterministic pair ID (alphabetical order)
-  const [id1, id2] = [account1.id, account2.id].sort();
-  const pairId = `${id1}-${id2}`;
+  // Clear the pair
+  const pairId = `${account1.id}-${account2.id}`;
   chatPairs.delete(pairId);
   
   // Clear current partners
@@ -1680,30 +1614,30 @@ async function endConversationNaturally(pair: ChatPair, account1: Account, accou
   }, delay2);
 }
 
-async function initiateChatSimulation(initiator: Account, receiver: Account) {
-  // Note: initiator is now determined deterministically by findChatPartner()
-  // (the account with the "smaller" ID is always the initiator)
-  
-  if (initiator.pool !== 'active' || receiver.pool !== 'active') return;
-  if (!initiator.socket || !receiver.socket) return;
+async function initiateChatSimulation(account1: Account, account2: Account) {
+  if (account1.pool !== 'active' || account2.pool !== 'active') return;
+  if (!account1.socket || !account2.socket) return;
 
-  const initiatorJid = initiator.socket.user?.id;
-  const receiverJid = receiver.socket.user?.id;
+  const jid1 = account1.socket.user?.id;
+  const jid2 = account2.socket.user?.id;
 
-  if (!initiatorJid || !receiverJid) return;
+  if (!jid1 || !jid2) return;
 
-  // Get the chat pair - use deterministic pair ID (alphabetical order)
-  const [id1, id2] = [initiator.id, receiver.id].sort();
-  const pairId = `${id1}-${id2}`;
+  // Get the chat pair
+  const pairId = `${account1.id}-${account2.id}`;
   const pair = chatPairs.get(pairId);
   if (!pair) return;
 
   // ========== ANTI-SPAM CHECK ==========
   // Max 3 messages without reply - STOP sending!
   if (pair.unansweredMessages >= 3) {
-    addLog('warming', `🛑 [SPAM PREVENT] ${initiator.personality?.name || initiator.id} ↔ ${receiver.personality?.name || receiver.id}: Already sent ${pair.unansweredMessages} unanswered messages. Waiting for reply...`);
+    addLog('warming', `🛑 [SPAM PREVENT] ${account1.personality?.name || account1.id} ↔ ${account2.personality?.name || account2.id}: Already sent ${pair.unansweredMessages} unanswered messages. Waiting for reply...`);
     return;
   }
+
+  const initiator = Math.random() > 0.5 ? account1 : account2;
+  const receiver = initiator === account1 ? account2 : account1;
+  const receiverJid = initiator === account1 ? jid2 : jid1;
 
   // Check rate limit before sending
   const rateCheck = checkRateLimit(initiator);
@@ -1712,20 +1646,8 @@ async function initiateChatSimulation(initiator: Account, receiver: Account) {
     return;
   }
 
-  // ========== INTRODUCTION-BASED MESSAGE ==========
-  // For first message (introductionDone = false), use the introduction message
-  // already set in currentTopic. After introduction, transition to topics.
-  let message: string;
-  
-  if (!pair.introductionDone) {
-    // First message - use introduction message (already set in currentTopic)
-    message = pair.currentTopic;
-    pair.introductionDone = true;
-    addLog('info', `👋 [INTRODUCTION] ${initiator.personality?.name || initiator.id} sending introduction message`);
-  } else {
-    // After introduction - use current topic
-    message = pair.currentTopic;
-  }
+  // Use the pair's current topic as opening message
+  const message = pair.currentTopic;
 
   try {
     if (initiator.socket && initiator.status === 'online') {
@@ -1838,36 +1760,9 @@ async function simulateChatResponse(responder: Account, partner: Account, incomi
   pair.lastRespondedAt = new Date();
 
   try {
-    // ========== INTRODUCTION PHASE HANDLING ==========
-    // If responding to introduction (messageCount is 0 or 1), respond differently
-    let response: string;
-    
-    if (pair.messageCount <= 1 && pair.topicCategory === 'Perkenalan') {
-      // Responding to introduction - use simple, natural response
-      const introductionResponses = [
-        `Halo juga! Salam kenal ya 😊`,
-        `Hi! Salam kenal juga!`,
-        `Halo! Senang kenal kamu!`,
-        `Hi! Nama aku ${responder.personality?.name || 'aku'}, salam kenal!`,
-        `Halo! Salam kenal dari aku juga!`
-      ];
-      response = getRandomItem(introductionResponses);
-      
-      // After this response, transition to a real topic for next message
-      const newTopic = generateNewTopic(pair, responder, partner);
-      pair.currentTopic = newTopic.topic;
-      pair.topicCategory = newTopic.category;
-      pair.topicStartedAt = new Date();
-      
-      // Update relationship stage to acquaintance after introduction
-      pair.relationshipStage = 'acquaintance';
-      
-      addLog('info', `👋 [INTRODUCTION COMPLETE] ${responder.personality?.name || responder.id} replied to introduction. Next topic: "${newTopic.topic}"`);
-    } else {
-      // Normal conversation - use AI response
-      const context = buildConversationContext(pair, responder, partner);
-      response = await generateAIResponse(incomingMessage, responder.personality, context);
-    }
+    // Build context with topic and conversation history
+    const context = buildConversationContext(pair, responder, partner);
+    const response = await generateAIResponse(incomingMessage, responder.personality, context);
 
     if (config.typingSimulationEnabled) {
       await responder.socket.sendPresenceUpdate('composing', partnerJid);
@@ -2065,23 +1960,6 @@ Make each personality unique and diverse.`;
               p.activeHoursEnd = config.activeHoursEnd;
               p.peakHours = config.peakHours;
             }
-            
-            // Add isInitiator based on traits (same logic as generateUniquePersonality)
-            if (p.isInitiator === undefined) {
-              const extrovertTraits = ['ramah', 'humoris', 'aktif', 'kreatif'];
-              const introvertTraits = ['penyabar', 'santai', 'tekun', 'peduli'];
-              const traits = p.traits || [];
-              const hasExtrovertTraits = traits.some((t: string) => extrovertTraits.includes(t.toLowerCase()));
-              const hasIntrovertTraits = traits.some((t: string) => introvertTraits.includes(t.toLowerCase()));
-              
-              if (hasExtrovertTraits && !hasIntrovertTraits) {
-                p.isInitiator = true;
-              } else if (hasIntrovertTraits && !hasExtrovertTraits) {
-                p.isInitiator = false;
-              } else {
-                p.isInitiator = Math.random() > 0.5;
-              }
-            }
           });
 
           personalityPool.push(...toAdd);
@@ -2241,22 +2119,6 @@ async function generateUniquePersonality(accountId: string): Promise<Personality
   const randomTraits = Array.from({ length: 3 }, () => getRandomItem(traitsPool));
   const randomHobbies = Array.from({ length: 3 }, () => getRandomItem(hobbiesPool));
   
-  // Determine if initiator based on traits
-  // Extroverted/active traits = more likely to initiate
-  const extrovertTraits = ['ramah', 'humoris', 'aktif', 'kreatif'];
-  const introvertTraits = ['penyabar', 'santai', 'tekun', 'peduli'];
-  const hasExtrovertTraits = randomTraits.some(t => extrovertTraits.includes(t));
-  const hasIntrovertTraits = randomTraits.some(t => introvertTraits.includes(t));
-  
-  let isInitiator: boolean;
-  if (hasExtrovertTraits && !hasIntrovertTraits) {
-    isInitiator = true;  // Extrovert = likes to start chat
-  } else if (hasIntrovertTraits && !hasExtrovertTraits) {
-    isInitiator = false; // Introvert = prefers to wait
-  } else {
-    isInitiator = Math.random() > 0.5; // Mixed traits = random
-  }
-  
   const personality: Personality = {
     name: getRandomItem(indonesianNames),
     age: Math.floor(Math.random() * 22) + 18,
@@ -2274,9 +2136,7 @@ async function generateUniquePersonality(accountId: string): Promise<Personality
     // Communication preferences
     avgResponseTime,
     emojiUsage,
-    avgMessageLength,
-    // Chat initiation behavior
-    isInitiator
+    avgMessageLength
   };
   
   console.log(`Generated personality for ${accountId}:`, personality.name, `(${chronotypeConfig.name})`);
@@ -2284,178 +2144,42 @@ async function generateUniquePersonality(accountId: string): Promise<Personality
   return personality;
 }
 
-// ==================== PERSISTENT PERSONALITY DATABASE FUNCTIONS ====================
-
-// Load personality from database by phone number
-async function loadPersonalityFromDatabase(phoneNumber: string): Promise<Personality | null> {
-  try {
-    const dbPersonality = await db.personality.findFirst({
-      where: { phoneNumber }
-    });
-    
-    if (!dbPersonality) return null;
-    
-    // Convert database record to Personality interface
-    const personality: Personality = {
-      name: dbPersonality.name,
-      age: dbPersonality.age,
-      occupation: dbPersonality.occupation,
-      location: dbPersonality.location,
-      traits: JSON.parse(dbPersonality.traits),
-      writingStyle: dbPersonality.writingStyle,
-      hobbies: JSON.parse(dbPersonality.hobbies),
-      responseStyle: dbPersonality.responseStyle,
-      chronotype: dbPersonality.chronotype as Personality['chronotype'],
-      activeHoursStart: dbPersonality.activeHoursStart,
-      activeHoursEnd: dbPersonality.activeHoursEnd,
-      peakHours: JSON.parse(dbPersonality.peakHours),
-      avgResponseTime: dbPersonality.avgResponseTime,
-      emojiUsage: dbPersonality.emojiUsage as Personality['emojiUsage'],
-      avgMessageLength: dbPersonality.avgMessageLength as Personality['avgMessageLength'],
-      isInitiator: dbPersonality.isInitiator
-    };
-    
-    console.log(`[DB] ✅ Loaded personality from database for phone ${phoneNumber}:`, personality.name);
-    return personality;
-  } catch (error) {
-    console.error(`[DB] ❌ Failed to load personality for phone ${phoneNumber}:`, error);
-    return null;
-  }
-}
-
-// Save personality to database
-async function savePersonalityToDatabase(
-  phoneNumber: string,
-  accountId: string,
-  personality: Personality
-): Promise<boolean> {
-  try {
-    // Check if personality already exists for this phone number
-    const existing = await db.personality.findFirst({
-      where: { phoneNumber }
-    });
-    
-    if (existing) {
-      // Update existing personality
-      await db.personality.update({
-        where: { id: existing.id },
-        data: {
-          accountId, // Update to current account
-          name: personality.name,
-          age: personality.age,
-          occupation: personality.occupation,
-          location: personality.location,
-          traits: JSON.stringify(personality.traits),
-          writingStyle: personality.writingStyle,
-          hobbies: JSON.stringify(personality.hobbies),
-          responseStyle: personality.responseStyle,
-          chronotype: personality.chronotype,
-          activeHoursStart: personality.activeHoursStart,
-          activeHoursEnd: personality.activeHoursEnd,
-          peakHours: JSON.stringify(personality.peakHours),
-          avgResponseTime: personality.avgResponseTime,
-          emojiUsage: personality.emojiUsage,
-          avgMessageLength: personality.avgMessageLength,
-          isInitiator: personality.isInitiator
-        }
-      });
-      console.log(`[DB] ✅ Updated personality in database for phone ${phoneNumber}`);
-    } else {
-      // Create new personality
-      await db.personality.create({
-        data: {
-          phoneNumber,
-          accountId,
-          name: personality.name,
-          age: personality.age,
-          occupation: personality.occupation,
-          location: personality.location,
-          traits: JSON.stringify(personality.traits),
-          writingStyle: personality.writingStyle,
-          hobbies: JSON.stringify(personality.hobbies),
-          responseStyle: personality.responseStyle,
-          chronotype: personality.chronotype,
-          activeHoursStart: personality.activeHoursStart,
-          activeHoursEnd: personality.activeHoursEnd,
-          peakHours: JSON.stringify(personality.peakHours),
-          avgResponseTime: personality.avgResponseTime,
-          emojiUsage: personality.emojiUsage,
-          avgMessageLength: personality.avgMessageLength,
-          isInitiator: personality.isInitiator
-        }
-      });
-      console.log(`[DB] ✅ Created new personality in database for phone ${phoneNumber}`);
-    }
-    
-    return true;
-  } catch (error) {
-    console.error(`[DB] ❌ Failed to save personality for phone ${phoneNumber}:`, error);
-    return false;
-  }
-}
-
-// Get or create personality for a phone number
-// This is the main function to use when connecting
-async function getOrCreatePersonality(
-  phoneNumber: string,
-  accountId: string
-): Promise<Personality | null> {
-  // 1. Check in-memory cache first (fastest)
-  const cachedPersonality = personalityByPhone.get(phoneNumber);
-  if (cachedPersonality) {
-    console.log(`[PERSONALITY] ✅ Found in cache for phone ${phoneNumber}:`, cachedPersonality.name);
-    return cachedPersonality;
-  }
-  
-  // 2. Check database
-  const dbPersonality = await loadPersonalityFromDatabase(phoneNumber);
-  if (dbPersonality) {
-    // Cache it for future use
-    personalityByPhone.set(phoneNumber, dbPersonality);
-    personalityRegistry.set(accountId, dbPersonality);
-    console.log(`[PERSONALITY] ✅ Loaded from database for phone ${phoneNumber}:`, dbPersonality.name);
-    return dbPersonality;
-  }
-  
-  // 3. Generate new personality
-  console.log(`[PERSONALITY] 🆕 Generating new personality for phone ${phoneNumber}...`);
-  const newPersonality = await generateUniquePersonality(accountId);
-  if (!newPersonality) {
-    console.error(`[PERSONALITY] ❌ Failed to generate personality for ${phoneNumber}`);
-    return null;
-  }
-  
-  // 4. Save to database
-  const saved = await savePersonalityToDatabase(phoneNumber, accountId, newPersonality);
-  if (saved) {
-    // Cache it
-    personalityByPhone.set(phoneNumber, newPersonality);
-    personalityRegistry.set(accountId, newPersonality);
-    console.log(`[PERSONALITY] ✅ Created and saved new personality for phone ${phoneNumber}:`, newPersonality.name);
-  }
-  
-  return newPersonality;
-}
-
 // ==================== SESSION MANAGEMENT ====================
 
-// Clear session data from database (PostgreSQL - persistent!)
+// Clear session data using rimraf for reliable deletion on Docker volumes
 async function clearSessionData(accountId: string): Promise<{ success: boolean; error?: string }> {
-  console.log('[CLEAR SESSION] Attempting to clear session from database for:', accountId);
-
+  const sessionPath = join(SESSIONS_DIR, accountId);
+  
+  console.log('[CLEAR SESSION] Attempting to clear session for:', accountId);
+  console.log('[CLEAR SESSION] Session path:', sessionPath);
+  
   try {
-    // Delete session from database (PostgreSQL - persistent!)
-    await db.whatsAppSession.delete({
-      where: { accountId }
-    }).catch((err: any) => {
-      // P2025 = Record not found, which is OK
-      if (err.code !== 'P2025') {
-        throw err;
-      }
+    // Check if session directory exists
+    try {
+      await access(sessionPath);
+      console.log('[CLEAR SESSION] Session directory exists');
+    } catch {
+      console.log('[CLEAR SESSION] Session directory does not exist, nothing to clear');
+      return { success: true };
+    }
+    
+    // Use rimraf for reliable deletion (works better on Docker volumes than fs.rmSync)
+    console.log('[CLEAR SESSION] Deleting session directory with rimraf...');
+    await rimraf(sessionPath, { 
+      maxRetries: 5, 
+      retryDelay: 100,
+      glob: false 
     });
-
-    console.log('[CLEAR SESSION] ✅ Session cleared from database');
-    return { success: true };
+    
+    // Verify deletion
+    try {
+      await access(sessionPath);
+      console.log('[CLEAR SESSION] ⚠️ Session directory still exists after deletion!');
+      return { success: false, error: 'Session directory still exists after deletion' };
+    } catch {
+      console.log('[CLEAR SESSION] ✅ Session directory successfully deleted');
+      return { success: true };
+    }
   } catch (error: any) {
     console.error('[CLEAR SESSION] ❌ Error clearing session:', error);
     return { success: false, error: error?.message || 'Unknown error' };
@@ -2582,16 +2306,7 @@ async function startSession(accountId: string, usePairingCode: boolean = false, 
     const isReconnect = existingAccount !== undefined;
 
     // ========== CHECK FOR EXISTING PERSONALITY (prevent regeneration) ==========
-    // First check by accountId (legacy), then by phone number (primary)
-    let existingPersonality = personalityRegistry.get(accountId);
-
-    // If not found by accountId, check if we have phone number from existing account
-    if (!existingPersonality && existingAccount?.phoneNumber) {
-      existingPersonality = personalityByPhone.get(existingAccount.phoneNumber);
-      if (existingPersonality) {
-        console.log(`[PERSONALITY] Found personality by phone ${existingAccount.phoneNumber} during reconnect`);
-      }
-    }
+    const existingPersonality = personalityRegistry.get(accountId);
 
     // ========== CHECK IF ACCOUNT EVER CONNECTED SUCCESSFULLY ==========
     const hasEverConnected = everConnected.get(accountId) || false;
@@ -2620,26 +2335,18 @@ async function startSession(accountId: string, usePairingCode: boolean = false, 
       addLog('info', `Starting new session for account ${accountId}`, accountId);
     }
 
-    console.log('[START SESSION] Loading auth state from DATABASE (PostgreSQL - persistent)...');
-    let { state, saveCreds, clearSession } = await useDatabaseAuthState(accountId);
+    const sessionDir = join(SESSIONS_DIR, accountId);
+    await mkdir(sessionDir, { recursive: true });
+    console.log('[START SESSION] Session directory created:', sessionDir);
+
+    console.log('[START SESSION] Loading auth state...');
+    let { state, saveCreds } = await useMultiFileAuthState(sessionDir);
     console.log('[START SESSION] Auth state loaded:');
     console.log('[START SESSION] - hasCreds:', !!state.creds);
     console.log('[START SESSION] - creds.me exists:', !!state.creds?.me);
     console.log('[START SESSION] - creds.me.id:', state.creds?.me?.id || 'N/A');
     console.log('[START SESSION] - creds.me.name:', state.creds?.me?.name || 'N/A');
     console.log('[START SESSION] - This account will:', state.creds?.me ? 'TRY LOGIN (no QR)' : 'REGISTER (expect QR)');
-
-    // ========== CHECK PERSONALITY BY PHONE FROM CREDENTIALS ==========
-    // If we have creds.me.id, we can look up personality by phone number
-    // This handles the case where accountId changed but phone number is same
-    if (!existingPersonality && state.creds?.me?.id) {
-      const phoneFromCreds = state.creds.me.id.split('@')[0];
-      existingPersonality = personalityByPhone.get(phoneFromCreds);
-      if (existingPersonality) {
-        console.log(`[PERSONALITY] Found existing personality by phone from creds: ${phoneFromCreds}`);
-        addLog('info', `🎭 Found existing personality for phone ${phoneFromCreds}: ${existingPersonality.name}`, accountId);
-      }
-    }
 
     // ========== AUTO-DETECT AND CLEAR INCOMPLETE SESSIONS ==========
     // If creds exists but creds.me doesn't exist, it's an incomplete session
@@ -2655,11 +2362,11 @@ async function startSession(accountId: string, usePairingCode: boolean = false, 
       const clearResult = await clearSessionData(accountId);
       if (clearResult.success) {
         console.log('[START SESSION] ✅ Incomplete session cleared, recreating fresh session...');
-        // Reload auth state from database
-        const freshAuth = await useDatabaseAuthState(accountId);
+        // Re-create session directory and reload auth state
+        await mkdir(sessionDir, { recursive: true });
+        const freshAuth = await useMultiFileAuthState(sessionDir);
         state = freshAuth.state;
         saveCreds = freshAuth.saveCreds;
-        clearSession = freshAuth.clearSession;
         console.log('[START SESSION] ✅ Fresh auth state loaded');
         console.log('[START SESSION] - hasCreds:', !!state.creds);
         console.log('[START SESSION] - creds.me exists:', !!state.creds?.me);
@@ -2798,22 +2505,8 @@ async function startSession(accountId: string, usePairingCode: boolean = false, 
         reconnectAttempts.set(accountId, 0);
         everConnected.set(accountId, true);
         account.status = 'online';
-        // IMPORTANT: Don't set pool directly - use assignAccountToPool to trigger chat partner search
-        // account.pool = 'active'; // REMOVED - was causing bug where chat never starts
+        account.pool = 'active';
         console.log('[CONNECTION] ✅ Successfully connected:', accountId);
-        
-        // ========== EXTRACT PHONE NUMBER FROM SOCKET ==========
-        // The WhatsApp user ID format is: 62812345678@s.whatsapp.net
-        // Extract the phone number (part before @)
-        const waUserId = socket.user?.id;
-        const extractedPhoneNumber = waUserId ? waUserId.split('@')[0] : undefined;
-        
-        if (extractedPhoneNumber) {
-          account.phoneNumber = extractedPhoneNumber;
-          phoneToAccountId.set(extractedPhoneNumber, accountId);
-          console.log('[CONNECTION] 📞 Phone number extracted:', extractedPhoneNumber);
-          addLog('info', `📞 Phone: ${extractedPhoneNumber}`, accountId);
-        }
         
         // Log if this was a new login (after QR scan/pairing)
         if (isNewLogin) {
@@ -2823,7 +2516,7 @@ async function startSession(accountId: string, usePairingCode: boolean = false, 
           addLog('info', `✅ WhatsApp connected successfully`, accountId);
         }
         
-        io.emit('account-status', { accountId, status: 'online', isNewLogin, phoneNumber: extractedPhoneNumber });
+        io.emit('account-status', { accountId, status: 'online', isNewLogin });
         
         // Clear pairing success tracking since connection is now stable
         recentPairingSuccess.delete(accountId);
@@ -2834,46 +2527,6 @@ async function startSession(accountId: string, usePairingCode: boolean = false, 
           clearTimeout(t);
           connectionTimeouts.delete(accountId);
         }
-        
-        // ========== PERSISTENT PERSONALITY BY PHONE NUMBER ==========
-        // Create or retrieve personality based on phone number (not accountId)
-        // This ensures the same phone number always has the same personality
-        // even across server restarts (stored in database)
-        if (extractedPhoneNumber) {
-          const personality = await getOrCreatePersonality(extractedPhoneNumber, accountId);
-          
-          if (personality) {
-            account.personality = personality;
-            account.isInActiveWindow = isInActiveWindow(personality);
-            const chronotypeDesc = CHRONOTYPE_CONFIGS[personality.chronotype].description;
-            addLog('info', `🎭 Personality: ${personality.name}, ${personality.age}yo ${personality.occupation} (${chronotypeDesc})`, accountId);
-          } else {
-            addLog('warning', `⚠️ Failed to get/create personality for phone ${extractedPhoneNumber}`, accountId);
-          }
-        }
-        
-        // ========== TRIGGER POOL ASSIGNMENT ==========
-        // This will find a chat partner if chat simulation is enabled
-        // Use 'active' pool by default for new connections
-        console.log('[CONNECTION] Assigning to active pool to trigger chat partner search...');
-        await assignAccountToPool(account, 'active');
-        
-        // ========== RETRY PARTNER SEARCH FOR ORPHAN ACCOUNTS ==========
-        // After this account joins, check if there are active accounts without partners
-        // and try to find partners for them (in case they connected before others were ready)
-        setTimeout(async () => {
-          const activeAccountsWithoutPartners = getActiveAccounts().filter(
-            a => a.id !== accountId && !a.currentChatPartner && a.socket?.user?.id
-          );
-          if (activeAccountsWithoutPartners.length > 0) {
-            addLog('info', `🔄 Retrying partner search for ${activeAccountsWithoutPartners.length} orphan accounts...`);
-            for (const orphan of activeAccountsWithoutPartners) {
-              if (!orphan.currentChatPartner) {
-                await findChatPartnerWithRetry(orphan, 1); // Quick retry with 1 attempt
-              }
-            }
-          }
-        }, 30000); // Wait 30 seconds for things to settle
       }
 
       // ========== HANDLE QR CODE ==========
@@ -2922,27 +2575,10 @@ async function startSession(accountId: string, usePairingCode: boolean = false, 
                               statusCode === 515 ||
                               statusCode === DisconnectReason.restartRequired;
         
-        // ========================================
-        // QR TIMEOUT DETECTION
-        // ========================================
-        // Error 408 during QR mode (never connected) is NOT a ban
-        // It just means QR was not scanned in time
-        const hasConnected = everConnected.get(accountId) || false;
-        const isQRTimeout = statusCode === 408 && !hasConnected;
-        
-        // ========================================
-        // CONFLICT DETECTION (User opened WA elsewhere)
-        // ========================================
-        // Error 440 = logged in elsewhere, NOT a ban
-        const isConflict = statusCode === 440;
-        
         console.log('[CONNECTION] ❌ Disconnected:', accountId, {
           code: statusCode,
           error: errorMessage,
-          isStreamError,
-          isQRTimeout,
-          isConflict,
-          hasConnected
+          isStreamError
         });
 
         // Check if account is being deleted
@@ -2952,25 +2588,14 @@ async function startSession(accountId: string, usePairingCode: boolean = false, 
           return;
         }
 
-        const hasConnectedBefore = everConnected.get(accountId) || false;
+        const hasConnected = everConnected.get(accountId) || false;
         const currentAttemptCount = reconnectAttempts.get(accountId) || 0;
 
-        // ========================================
-        // BAN DETECTION LOGIC (FIXED)
-        // ========================================
-        // Only consider account banned if:
-        // 1. Error 403 (explicit ban from WhatsApp)
-        // 2. Error 401 AFTER successful connection AND max retries reached
-        //
-        // DO NOT consider banned for:
-        // - Error 408 during QR mode (QR timeout - never connected)
-        // - Error 440 (conflict - user opened WA elsewhere)
-        // - Error 515 (stream error - network issue)
-        // - Any error before successful connection
+        // Ban detection logic
         const DEFINITE_BAN_CODE = 403;
         const TEMPORARY_CODES = [
           DisconnectReason.restartRequired,
-          401, 408, 409, 429, 440, 500, 502, 503, 504, 515,
+          401, 408, 409, 429, 500, 502, 503, 504, 515,
           DisconnectReason.badSession,
         ];
 
@@ -2981,29 +2606,23 @@ async function startSession(accountId: string, usePairingCode: boolean = false, 
         let banReason = '';
 
         if (isDefiniteBan) {
-          // Explicit ban from WhatsApp
           isBanned = true;
-          banReason = `Account banned by WhatsApp (code: ${statusCode})`;
-        } else if (statusCode === 401 && hasConnectedBefore && currentAttemptCount >= MAX_RECONNECT_ATTEMPTS) {
-          // Session lost after successful connection AND max retries reached
-          isBanned = true;
-          banReason = `Session lost after ${MAX_RECONNECT_ATTEMPTS} attempts (code: ${statusCode})`;
+          banReason = `Account banned (code: ${statusCode})`;
+        } else if (statusCode === 401 && hasConnected) {
+          if (currentAttemptCount >= MAX_RECONNECT_ATTEMPTS) {
+            isBanned = true;
+            banReason = `Session lost after multiple attempts (code: ${statusCode})`;
+          }
         }
-        // IMPORTANT: Error 408 during QR mode (hasConnectedBefore = false) is NOT a ban!
-        // IMPORTANT: Error 440 (conflict) is NOT a ban, just logged in elsewhere!
 
         account.status = 'offline';
         account.pool = 'offline';
         io.emit('account-status', { accountId, status: 'offline' });
 
-        // Special handling descriptions
+        // Special handling for Stream Errored
         let statusDesc = isBanned ? '🚫 BAN DETECTED' : (isTemporaryCode ? '⏳ Temporary error' : '🔌 Disconnected');
         if (isStreamError) {
           statusDesc = '⚠️ Stream Errored (auto-reconnect)';
-        } else if (isQRTimeout) {
-          statusDesc = '📱 QR Timeout (waiting for scan)';
-        } else if (isConflict) {
-          statusDesc = '🔄 Conflict - logged in elsewhere';
         }
         addLog('connection', `${statusDesc} (code: ${statusCode})${errorMessage ? ` - ${errorMessage}` : ''}`, accountId);
 
@@ -3012,62 +2631,6 @@ async function startSession(accountId: string, usePairingCode: boolean = false, 
 
         if (isBanned) {
           await handleBannedAccount(accountId, banReason);
-          return;
-        }
-
-        // ========================================
-        // HANDLE QR TIMEOUT (NEVER CONNECTED)
-        // ========================================
-        // If account never connected and QR timed out, just retry with fresh session
-        // Don't count as reconnect attempt
-        if (isQRTimeout) {
-          addLog('info', `📱 QR timeout - generating fresh QR for ${accountId}`, accountId);
-          // Reset reconnect attempts since this is not a real reconnect scenario
-          reconnectAttempts.set(accountId, 0);
-          
-          // Delete from memory to allow fresh start
-          accounts.delete(accountId);
-          
-          // Wait and retry with fresh session
-          setTimeout(async () => {
-            try {
-              await fetch(`http://localhost:3030/session/start`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ accountId, forceNew: true }) // forceNew to get fresh QR
-              });
-            } catch (e) {
-              console.error('[QR TIMEOUT] Failed to retry:', e);
-            }
-          }, 5000); // Wait 5 seconds before retry
-          return;
-        }
-
-        // ========================================
-        // HANDLE CONFLICT (440 - LOGGED IN ELSEWHERE)
-        // ========================================
-        // User opened WhatsApp on phone or another device
-        // Wait longer before reconnecting to avoid immediate conflict
-        if (isConflict) {
-          addLog('info', `🔄 Conflict detected - WhatsApp opened elsewhere. Waiting 60s before reconnect...`, accountId);
-          
-          // Delete from memory to allow reconnect
-          accounts.delete(accountId);
-          
-          // Don't increment reconnect counter for conflict
-          // Just wait longer before retry
-          setTimeout(async () => {
-            try {
-              addLog('info', `🔄 Attempting reconnect after conflict...`, accountId);
-              await fetch(`http://localhost:3030/session/start`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ accountId, forceNew: false })
-              });
-            } catch (e) {
-              console.error('[CONFLICT RECONNECT] Failed:', e);
-            }
-          }, 60000); // Wait 60 seconds
           return;
         }
 
@@ -3165,18 +2728,17 @@ async function startSession(accountId: string, usePairingCode: boolean = false, 
 
     // Register creds.update handler immediately
     // CRITICAL: Also track when pairing succeeds for Stream Error handling
-    socket.ev.on('creds.update', async () => {
-      await saveCreds();
+    socket.ev.on('creds.update', async (update) => {
+      await saveCreds(update);
       
       // Track when new credentials are saved (indicating successful pairing)
       // This is crucial for Stream Error 515 handling - we must not clear session
       // if pairing just succeeded!
-      const me = socket.user;
-      if (me && me.id) {
-        console.log('[CREDS] ✅ Credentials saved with user ID:', me.id);
+      if (update.me && update.me.id) {
+        console.log('[CREDS] ✅ Credentials saved with user ID:', update.me.id);
         recentPairingSuccess.set(accountId, {
           timestamp: new Date(),
-          phoneNumber: me.id.split('@')[0]
+          phoneNumber: update.me.id.split('@')[0]
         });
         addLog('info', `🔐 Credentials saved - pairing successful for ${accountId}`, accountId);
       }
@@ -3284,16 +2846,23 @@ async function startSession(accountId: string, usePairingCode: boolean = false, 
     }
     console.log('[SESSION] ✅ Retrieved account from map:', accountId);
 
-    // ========== SET EXISTING PERSONALITY (if found) ==========
-    // Personality is generated AFTER connection opens (see connection === 'open' handler)
-    // Here we only set it if we found an existing personality from previous sessions
-    if (existingPersonality) {
+    // ========== UPDATE PERSONALITY ASYNC ==========
+    // Personality generation is async and doesn't block QR handling
+    if (!account.personality && !existingPersonality) {
+      addLog('info', `🎭 Generating personality for ${accountId}...`, accountId);
+      generateUniquePersonality(accountId).then(personality => {
+        if (personality) {
+          account.personality = personality;
+          personalityRegistry.set(accountId, personality);
+          account.isInActiveWindow = isInActiveWindow(personality);
+          const chronotypeDesc = CHRONOTYPE_CONFIGS[personality.chronotype].description;
+          addLog('info', `✨ Personality: ${personality.name}, ${personality.age}yo ${personality.occupation} (${chronotypeDesc})`, accountId);
+        }
+      }).catch(err => console.error('[PERSONALITY] Generation failed:', err));
+    } else if (existingPersonality) {
       account.personality = existingPersonality;
       account.isInActiveWindow = isInActiveWindow(existingPersonality);
-      console.log(`[PERSONALITY] Set existing personality for ${accountId}: ${existingPersonality.name}`);
     }
-    // Note: If no existing personality, it will be created in connection.open handler
-    // when we have the phone number available
 
     // ========== EMIT STATUS & SET TIMEOUT ==========
     io.emit('account-status', { accountId, status: 'connecting' });
@@ -3697,24 +3266,9 @@ app.get('/personality-registry', (req, res) => {
     isActive: accounts.has(accountId)
   }));
 
-  // Also include phone-to-personality mappings
-  const phoneRegistry = Array.from(personalityByPhone.entries()).map(([phoneNumber, personality]) => ({
-    phoneNumber,
-    accountId: phoneToAccountId.get(phoneNumber),
-    personality: {
-      name: personality.name,
-      age: personality.age,
-      occupation: personality.occupation,
-      location: personality.location,
-      chronotype: personality.chronotype
-    }
-  }));
-
   res.json({
     total: registry.length,
-    byAccountId: registry,
-    byPhoneNumber: phoneRegistry,
-    phoneMappings: phoneRegistry.length
+    registry
   });
 });
 
@@ -3742,18 +3296,8 @@ app.post('/banned/clear/:accountId', (req, res) => {
 app.post('/personality/reset/:accountId', (req, res) => {
   const { accountId } = req.params;
 
-  // Get phone number from account before deleting
-  const account = accounts.get(accountId);
-  const phoneNumber = account?.phoneNumber;
-
   const hadPersonality = personalityRegistry.has(accountId);
   personalityRegistry.delete(accountId);
-
-  // Also delete from phone-based registry if phone number exists
-  if (phoneNumber) {
-    personalityByPhone.delete(phoneNumber);
-    phoneToAccountId.delete(phoneNumber);
-  }
 
   // Also clear from banned list if present
   if (BURNABLE_CONFIG.bannedAccounts.has(accountId)) {
@@ -3763,12 +3307,11 @@ app.post('/personality/reset/:accountId', (req, res) => {
   reconnectAttempts.delete(accountId);
   everConnected.delete(accountId); // Reset connection tracking
 
-  addLog('info', `🔄 Personality reset for ${accountId}${phoneNumber ? ` (phone: ${phoneNumber})` : ''}`);
+  addLog('info', `🔄 Personality reset for ${accountId}`);
 
   res.json({
     success: true,
     hadPersonality,
-    phoneNumber,
     message: `Personality reset for ${accountId}. A new personality will be generated on next session start.`
   });
 });
@@ -4234,19 +3777,18 @@ app.post('/config', async (req, res) => {
   const updates: Partial<Config> = {};
   for (const key of ALLOWED_CONFIG_FIELDS) {
     if (req.body[key] !== undefined) {
-      const configKey = key as keyof Config;
       // Type validation for numbers
-      if (typeof config[configKey] === 'number') {
+      if (typeof config[key as keyof Config] === 'number') {
         const val = Number(req.body[key]);
         if (!isNaN(val) && val >= 0) {
-          (updates as Record<string, unknown>)[key] = val;
+          updates[key as keyof Config] = val;
         }
-      } else if (typeof config[configKey] === 'boolean') {
-        (updates as Record<string, unknown>)[key] = Boolean(req.body[key]);
-      } else if (typeof config[configKey] === 'string') {
+      } else if (typeof config[key as keyof Config] === 'boolean') {
+        updates[key as keyof Config] = Boolean(req.body[key]);
+      } else if (typeof config[key as keyof Config] === 'string') {
         // Security: Limit string length
         const val = String(req.body[key]).slice(0, 5000);
-        (updates as Record<string, unknown>)[key] = val;
+        updates[key as keyof Config] = val;
       }
     }
   }
@@ -4754,19 +4296,20 @@ app.delete('/account/:id', async (req, res) => {
     // Remove from accounts map
     accounts.delete(accountId);
 
-    // Delete session from database (PostgreSQL)
-    await clearSessionData(accountId);
-
-    // Delete account from database
+    // Delete session files
+    const sessionDir = join(SESSIONS_DIR, accountId);
     try {
-      await db.whatsAppAccount.delete({
-        where: { id: accountId }
-      });
-    } catch (e: any) {
-      // Account might not exist in database
-      if (e.code !== 'P2025') {
-        console.log('[DELETE] Warning: Could not delete account from database:', e.message);
-      }
+      await rm(sessionDir, { recursive: true, force: true });
+    } catch (e) {
+      // Session dir might not exist
+    }
+
+    // Delete backup files
+    const backupDir = join(BACKUP_DIR, accountId);
+    try {
+      await rm(backupDir, { recursive: true, force: true });
+    } catch (e) {
+      // Backup dir might not exist
     }
 
     addLog('info', `🗑️ Account deleted: ${accountId}`);
@@ -4910,7 +4453,14 @@ io.on('connection', (socket) => {
 });
 
 // ==================== STARTUP ====================
-// Note: Sessions are now stored in PostgreSQL database
+
+async function ensureSessionsDir() {
+  try {
+    await access(SESSIONS_DIR);
+  } catch {
+    await mkdir(SESSIONS_DIR, { recursive: true });
+  }
+}
 
 // ==================== DATABASE SYNC ====================
 
@@ -5057,46 +4607,9 @@ async function loadConfig() {
 
 async function start() {
   try {
-    // Note: No longer need ensureSessionsDir() - sessions stored in PostgreSQL
+    await ensureSessionsDir();
+    await ensureBackupDir();
     await loadConfig();
-    
-    // ========== LOAD SESSIONS FROM DATABASE ==========
-    // This is the key feature for Railway free tier - sessions persist in PostgreSQL!
-    console.log('[STARTUP] Loading sessions from database...');
-    try {
-      const sessions = await db.whatsAppSession.findMany();
-      console.log(`[STARTUP] Found ${sessions.length} sessions in database`);
-      
-      for (const session of sessions) {
-        try {
-          // Check if session has valid credentials (creds.me exists)
-          const creds = JSON.parse(session.creds);
-          if (creds?.me?.id) {
-            console.log(`[STARTUP] 📱 Reconnecting session: ${session.accountId} (${session.phoneNumber || 'unknown phone'})`);
-            addLog('info', `📱 Reconnecting session from database: ${session.accountId}`, session.accountId);
-            
-            // Start session - it will load from database automatically
-            // Delay to prevent overwhelming the server
-            setTimeout(() => {
-              startSession(session.accountId).catch(err => {
-                console.error(`[STARTUP] Failed to reconnect ${session.accountId}:`, err);
-              });
-            }, Math.random() * 10000); // Random delay 0-10 seconds to stagger connections
-          } else {
-            console.log(`[STARTUP] ⚠️ Incomplete session found: ${session.accountId} (no creds.me)`);
-          }
-        } catch (parseErr) {
-          console.error(`[STARTUP] Invalid session data for ${session.accountId}:`, parseErr);
-        }
-      }
-      
-      if (sessions.length > 0) {
-        addLog('info', `🔄 Reconnecting ${sessions.length} sessions from database`);
-      }
-    } catch (dbErr) {
-      console.error('[STARTUP] Failed to load sessions from database:', dbErr);
-    }
-    // ========== END LOAD SESSIONS ==========
 
     // Health check endpoint
     app.get('/health', (req, res) => {

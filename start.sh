@@ -169,13 +169,6 @@ echo "   HTTP: $HTTP_CODE"
 echo "   Response: $RESPONSE..."
 echo ""
 
-echo "3. Via Next.js Proxy /api/socket.io (legacy):"
-HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:3000/api/socket.io?EIO=4&transport=polling" 2>/dev/null || echo "000")
-RESPONSE=$(curl -s "http://localhost:3000/api/socket.io?EIO=4&transport=polling" 2>/dev/null | head -c 100)
-echo "   HTTP: $HTTP_CODE"
-echo "   Response: $RESPONSE..."
-echo ""
-
 # ==================== FINAL STATUS ====================
 
 echo "=========================================="

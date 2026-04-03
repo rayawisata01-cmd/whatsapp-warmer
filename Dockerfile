@@ -1,4 +1,4 @@
-# Build v13 - PostgreSQL support, fixed prisma generate order
+# Build v14 - PostgreSQL support, WhatsAppSession model for database auth
 FROM oven/bun:1-alpine
 
 WORKDIR /app
