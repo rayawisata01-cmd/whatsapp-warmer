@@ -56,6 +56,11 @@ import {
   X,
   Play,
   Square,
+  Database,
+  Key,
+  Trash,
+  BarChart3,
+  Table,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -108,6 +113,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { DatabaseTab } from "@/components/database-tab";
 
 // ==================== TYPES ====================
 
@@ -1299,7 +1305,7 @@ export default function Dashboard() {
         {/* Main Content */}
         <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-            <TabsList className="grid w-full grid-cols-5 lg:w-auto lg:inline-grid">
+            <TabsList className="grid w-full grid-cols-6 lg:w-auto lg:inline-grid">
               <TabsTrigger value="dashboard" className="gap-2">
                 <LayoutDashboard className="h-4 w-4" />
                 <span className="hidden sm:inline">Dashboard</span>
@@ -1315,6 +1321,10 @@ export default function Dashboard() {
               <TabsTrigger value="chatlog" className="gap-2">
                 <MessageCircle className="h-4 w-4" />
                 <span className="hidden sm:inline">Chat Log</span>
+              </TabsTrigger>
+              <TabsTrigger value="database" className="gap-2">
+                <Database className="h-4 w-4" />
+                <span className="hidden sm:inline">Database</span>
               </TabsTrigger>
               <TabsTrigger value="settings" className="gap-2">
                 <Settings className="h-4 w-4" />
@@ -2236,6 +2246,11 @@ export default function Dashboard() {
                   </Card>
                 </div>
               </div>
+            </TabsContent>
+
+            {/* DATABASE TAB */}
+            <TabsContent value="database" className="space-y-6">
+              <DatabaseTab />
             </TabsContent>
 
             {/* SETTINGS TAB */}
