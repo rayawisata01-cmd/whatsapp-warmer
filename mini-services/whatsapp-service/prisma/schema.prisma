@@ -4,8 +4,8 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = "file:/home/z/my-project/db/custom.db"
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -27,6 +27,26 @@ model Post {
 }
 
 // ==================== WHATSAPP WARMER MODELS ====================
+
+// WhatsApp Session - for storing Baileys auth state in database
+// This is CRITICAL for Railway free tier where volumes are not available
+model WhatsAppSession {
+  id          String   @id @default(cuid())
+  accountId   String   @unique
+  phoneNumber String?
+  
+  // Baileys auth state
+  creds       String   // JSON: AuthenticationCreds
+  keys        String   // JSON: Signal keys
+  
+  // Metadata
+  lastSync    DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([accountId])
+  @@index([phoneNumber])
+}
 
 model WhatsAppAccount {
   id              String   @id
@@ -79,6 +99,10 @@ model Personality {
   id           String @id @default(cuid())
   accountId    String @unique
   account      WhatsAppAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  
+  // Phone number for persistent lookup across reconnects
+  // Same phone = same personality even if accountId changes
+  phoneNumber    String? @unique
   
   name           String
   age            Int

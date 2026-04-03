@@ -11,9 +11,8 @@
  * 4. Session persists across container restarts!
  */
 
-import { AuthenticationState, AuthenticationCreds, AuthenticationKeys, SignalKeyStore, SignalKeyStoreWithTransaction, initAuthCreds, BufferJSON } from '@whiskeysockets/baileys';
+import { AuthenticationState, AuthenticationCreds, SignalKeyStore, SignalKeyStoreWithTransaction, initAuthCreds, BufferJSON } from '@whiskeysockets/baileys';
 import { db } from './db.js';
-import { Prisma } from '@prisma/client';
 
 /**
  * Create a SignalKeyStore that persists to database

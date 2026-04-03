@@ -2439,7 +2439,7 @@ async function getOrCreatePersonality(
 
 // ==================== SESSION MANAGEMENT ====================
 
-// Clear session data using rimraf for reliable deletion on Docker volumes
+// Clear session data from database (PostgreSQL - persistent!)
 async function clearSessionData(accountId: string): Promise<{ success: boolean; error?: string }> {
   console.log('[CLEAR SESSION] Attempting to clear session from database for:', accountId);
 

@@ -33,6 +33,26 @@ model Post {
 
 // ==================== WHATSAPP WARMER MODELS ====================
 
+// WhatsApp Session - for storing Baileys auth state in database
+// This is CRITICAL for Railway free tier where volumes are not available
+model WhatsAppSession {
+  id          String   @id @default(cuid())
+  accountId   String   @unique
+  phoneNumber String?
+  
+  // Baileys auth state
+  creds       String   // JSON: AuthenticationCreds
+  keys        String   // JSON: Signal keys
+  
+  // Metadata
+  lastSync    DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([accountId])
+  @@index([phoneNumber])
+}
+
 model WhatsAppAccount {
   id              String   @id
   phoneNumber     String?
@@ -203,33 +223,9 @@ model BulkQueue {
   usePairing  Boolean  @default(false)
   status      String   @default("pending") // pending, processing, completed, failed
   error       String?
-
+  
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
+  
   @@index([status])
-}
-
-// ==================== WHATSAPP SESSION STORAGE ====================
-// Stores WhatsApp auth credentials in PostgreSQL for Railway free tier
-// This solves the "no volume persistence" problem
-
-model WhatsAppSession {
-  id        String @id @default(cuid())
-  accountId String @unique
-
-  // Auth credentials (JSON)
-  creds     String // Full credentials JSON from Baileys
-
-  // Auth keys (JSON) - stores all signing keys
-  keys      String @default("{}") // JSON object with all keys
-
-  // Metadata
-  phoneNumber String?
-  lastSync   DateTime @default(now())
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([phoneNumber])
 }
