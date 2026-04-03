@@ -1,0 +1,7 @@
+{
+  "name": "socket-test",
+  "type": "module",
+  "dependencies": {
+    "socket.io": "^4.7.2"
+  }
+}

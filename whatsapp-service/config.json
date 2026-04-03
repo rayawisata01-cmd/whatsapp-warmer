@@ -1,0 +1,21 @@
+{
+  "apiKey": "",
+  "apiUrl": "https://api.openai.com/v1",
+  "warmerEnabled": true,
+  "warmerDelayMin": 180000,
+  "warmerDelayMax": 420000,
+  "autoPresenceUpdate": true,
+  "presenceUpdateInterval": 30,
+  "typingSimulationEnabled": true,
+  "readReceiptsEnabled": true,
+  "aiSystemPrompt": "Kamu adalah orang Indonesia yang ramah dan santai. \nBalas pesan dengan gaya chat WhatsApp yang natural, singkat (1-2 kalimat), dan kadang pakai emoji.\nJangan terlihat seperti bot atau AI. Gunakan bahasa casual seperti \"gimana\", \"yaudah\", \"btw\", dll.\nTerserah konteksnya apa, balas dengan santai dan friendly.",
+  "aiModel": "gpt-3.5-turbo",
+  "warmingIntensity": "medium",
+  "affinityTrackingEnabled": true,
+  "progressiveRelationshipEnabled": true,
+  "activityPatternEnabled": true,
+  "smartPairingEnabled": true,
+  "aiProvider": "groq",
+  "groqApiKey": "",
+  "groqModel": "llama-3.3-70b-versatile"
+}

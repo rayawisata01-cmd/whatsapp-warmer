@@ -1,0 +1,23 @@
+{
+  "name": "whatsapp-service",
+  "version": "1.0.0",
+  "dependencies": {
+    "@types/multer": "^2.1.0",
+    "@whiskeysockets/baileys": "^6.7.8",
+    "express": "^4.21.2",
+    "groq-sdk": "^1.1.1",
+    "multer": "^2.1.1",
+    "pino": "^9.5.0",
+    "qrcode": "^1.5.4",
+    "rimraf": "^6.0.1",
+    "socket.io": "^4.8.1",
+    "xlsx": "^0.18.5",
+    "tsx": "^4.19.0"
+  },
+  "scripts": {
+    "dev": "bun --hot index.ts",
+    "start": "bun index.ts",
+    "start:node": "npx tsx index.ts"
+  },
+  "type": "module"
+}
