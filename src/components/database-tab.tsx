@@ -293,29 +293,41 @@ export function DatabaseTab() {
   // Delete handlers
   const handleDeleteAccount = async () => {
     setIsDeleting(true);
+    console.log('[DB TAB] Deleting account:', deleteDialog.id);
+
     try {
-      const response = await fetch(`/api/wa/db/clean/account/${deleteDialog.id}`, {
+      const url = `/api/wa/db/clean/account/${deleteDialog.id}`;
+      console.log('[DB TAB] Calling DELETE:', url);
+
+      const response = await fetch(url, {
         method: "DELETE",
       });
+
+      console.log('[DB TAB] Response status:', response.status);
+
+      const data = await response.json();
+      console.log('[DB TAB] Response data:', data);
+
       if (response.ok) {
         toast({
           title: "Success",
-          description: `Account ${deleteDialog.id} deleted successfully`,
+          description: `Account ${deleteDialog.id} deleted successfully. Deleted: ${JSON.stringify(data.deleted || {})}`,
         });
-        fetchAccounts();
-        fetchStats();
+        // Refresh data from server
+        await fetchAccounts();
+        await fetchStats();
       } else {
-        const data = await response.json();
         toast({
           title: "Error",
-          description: data.error || "Failed to delete account",
+          description: data.error || data.details || "Failed to delete account",
           variant: "destructive",
         });
       }
-    } catch (error) {
+    } catch (error: any) {
+      console.error('[DB TAB] Delete error:', error);
       toast({
         title: "Error",
-        description: "Failed to delete account",
+        description: `Failed to delete account: ${error.message || 'Unknown error'}`,
         variant: "destructive",
       });
     } finally {
@@ -326,29 +338,40 @@ export function DatabaseTab() {
 
   const handleDeleteSession = async () => {
     setIsDeleting(true);
+    console.log('[DB TAB] Deleting session:', deleteDialog.id);
+
     try {
-      const response = await fetch(`/api/wa/db/clean/session/${deleteDialog.id}`, {
+      const url = `/api/wa/db/clean/session/${deleteDialog.id}`;
+      console.log('[DB TAB] Calling DELETE:', url);
+
+      const response = await fetch(url, {
         method: "DELETE",
       });
+
+      console.log('[DB TAB] Response status:', response.status);
+
+      const data = await response.json();
+      console.log('[DB TAB] Response data:', data);
+
       if (response.ok) {
         toast({
           title: "Success",
           description: `Session for ${deleteDialog.id} deleted. User will need to scan QR again.`,
         });
-        fetchSessions();
-        fetchStats();
+        await fetchSessions();
+        await fetchStats();
       } else {
-        const data = await response.json();
         toast({
           title: "Error",
-          description: data.error || "Failed to delete session",
+          description: data.error || data.details || "Failed to delete session",
           variant: "destructive",
         });
       }
-    } catch (error) {
+    } catch (error: any) {
+      console.error('[DB TAB] Delete session error:', error);
       toast({
         title: "Error",
-        description: "Failed to delete session",
+        description: `Failed to delete session: ${error.message || 'Unknown error'}`,
         variant: "destructive",
       });
     } finally {

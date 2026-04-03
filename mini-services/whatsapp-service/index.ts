@@ -4297,15 +4297,21 @@ app.get('/account/:id', (req, res) => {
 app.delete('/account/:id', async (req, res) => {
   const accountId = req.params.id;
 
+  console.log('==========================================');
+  console.log('[DELETE ACCOUNT] Request to delete:', accountId);
+  console.log('==========================================');
+
   // Security: Validate accountId
   const validation = validateAccountId(accountId);
   if (!validation.valid) {
+    console.log('[DELETE ACCOUNT] Validation failed:', validation.error);
     return res.status(400).json({ error: validation.error });
   }
 
   const account = accounts.get(accountId);
 
   if (!account) {
+    console.log('[DELETE ACCOUNT] Account not found in memory:', accountId);
     return res.status(404).json({ error: 'Account not found' });
   }
 
@@ -4332,6 +4338,7 @@ app.delete('/account/:id', async (req, res) => {
     const sessionDir = join(SESSIONS_DIR, accountId);
     try {
       await rm(sessionDir, { recursive: true, force: true });
+      console.log('[DELETE ACCOUNT] Deleted session files:', sessionDir);
     } catch (e) {
       // Session dir might not exist
     }
@@ -4340,9 +4347,71 @@ app.delete('/account/:id', async (req, res) => {
     const backupDir = join(BACKUP_DIR, accountId);
     try {
       await rm(backupDir, { recursive: true, force: true });
+      console.log('[DELETE ACCOUNT] Deleted backup files:', backupDir);
     } catch (e) {
       // Backup dir might not exist
     }
+
+    // ========== DELETE FROM DATABASE ==========
+    // This is critical - without this, accounts reappear after restart
+    console.log('[DELETE ACCOUNT] Deleting from database...');
+    try {
+      // Delete chat pairs involving this account
+      const chatPairResult = await db.chatPair.deleteMany({
+        where: {
+          OR: [
+            { account1Id: accountId },
+            { account2Id: accountId }
+          ]
+        }
+      });
+      console.log('[DELETE ACCOUNT] Deleted chat pairs:', chatPairResult.count);
+
+      // Delete messages involving this account
+      const messageResult = await db.message.deleteMany({
+        where: {
+          OR: [
+            { accountId: accountId },
+            { toAccountId: accountId }
+          ]
+        }
+      });
+      console.log('[DELETE ACCOUNT] Deleted messages:', messageResult.count);
+
+      // Delete event logs for this account
+      const eventLogResult = await db.eventLog.deleteMany({
+        where: { accountId: accountId }
+      });
+      console.log('[DELETE ACCOUNT] Deleted event logs:', eventLogResult.count);
+
+      // Delete personality (cascade should handle this, but be explicit)
+      const personalityResult = await db.personality.deleteMany({
+        where: { accountId: accountId }
+      });
+      console.log('[DELETE ACCOUNT] Deleted personalities:', personalityResult.count);
+
+      // Delete WhatsApp session
+      const sessionResult = await db.whatsAppSession.deleteMany({
+        where: { accountId: accountId }
+      });
+      console.log('[DELETE ACCOUNT] Deleted sessions:', sessionResult.count);
+
+      // Finally delete the account
+      await db.whatsAppAccount.delete({
+        where: { id: accountId }
+      });
+
+      // Also remove from personality registry
+      personalityRegistry.delete(accountId);
+
+      console.log(`[DELETE ACCOUNT] ✅ Deleted account ${accountId} from database`);
+    } catch (dbError: any) {
+      console.error(`[DELETE ACCOUNT] ❌ Failed to delete account ${accountId} from database:`, dbError.message);
+      // Continue - we still want to report success for memory cleanup
+    }
+
+    // Clear deletion flag
+    pendingDeletion.delete(accountId);
 
     addLog('info', `🗑️ Account deleted: ${accountId}`);
     io.emit('account-deleted', { accountId });
@@ -4352,6 +4421,431 @@ app.delete('/account/:id', async (req, res) => {
     addLog('error', `Failed to delete account: ${error.message}`, accountId);
     // Clean up deletion flag on error
     pendingDeletion.delete(accountId);
+    console.error('[DELETE ACCOUNT] ❌ Error:', error);
+    res.status(500).json({ error: error.message, details: error.toString() });
+  }
+});
+
+// ==================== DATABASE MANAGEMENT ENDPOINTS ====================
+// These endpoints allow direct database management from the UI
+
+// Get database statistics
+app.get('/db/stats', async (req, res) => {
+  try {
+    const [
+      accountsCount,
+      sessionsCount,
+      personalitiesCount,
+      chatPairsCount,
+      messagesCount,
+      logsCount,
+      bulkQueueCount,
+      accountsByStatus,
+      accountsByPool,
+      messageStats,
+      healthStats,
+      chatPairStats,
+      bulkQueueStats,
+      logsStats
+    ] = await Promise.all([
+      db.whatsAppAccount.count(),
+      db.whatsAppSession.count(),
+      db.personality.count(),
+      db.chatPair.count(),
+      db.message.count(),
+      db.eventLog.count(),
+      db.bulkQueue.count(),
+      db.whatsAppAccount.groupBy({
+        by: ['status'],
+        _count: { id: true }
+      }),
+      db.whatsAppAccount.groupBy({
+        by: ['pool'],
+        _count: { id: true }
+      }),
+      db.whatsAppAccount.aggregate({
+        _sum: { messagesSent: true, messagesReceived: true, autoResponsesSent: true }
+      }),
+      db.whatsAppAccount.aggregate({
+        _avg: { healthScore: true },
+        _min: { healthScore: true },
+        _max: { healthScore: true }
+      }),
+      db.chatPair.aggregate({
+        _count: { id: true },
+        where: { isActive: true }
+      }),
+      db.bulkQueue.aggregate({
+        _count: { id: true },
+        where: { status: 'pending' }
+      }),
+      db.eventLog.aggregate({
+        _count: { id: true },
+        where: {
+          timestamp: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
+        }
+      })
+    ]);
+
+    // Get error count in last 24h
+    const errors24h = await db.eventLog.count({
+      where: {
+        type: 'error',
+        timestamp: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
+      }
+    });
+
+    res.json({
+      counts: {
+        accounts: accountsCount,
+        sessions: sessionsCount,
+        personalities: personalitiesCount,
+        chatPairs: chatPairsCount,
+        messages: messagesCount,
+        logs: logsCount,
+        bulkQueue: bulkQueueCount
+      },
+      accountsByStatus: Object.fromEntries(accountsByStatus.map(s => [s.status, s._count.id])),
+      accountsByPool: Object.fromEntries(accountsByPool.map(p => [p.pool, p._count.id])),
+      messageStats: {
+        totalSent: messageStats._sum.messagesSent || 0,
+        totalReceived: messageStats._sum.messagesReceived || 0,
+        totalAutoResponses: messageStats._sum.autoResponsesSent || 0
+      },
+      healthStats: {
+        average: Math.round(healthStats._avg.healthScore || 0),
+        min: healthStats._min.healthScore || 0,
+        max: healthStats._max.healthScore || 0
+      },
+      chatPairs: {
+        total: chatPairsCount,
+        active: chatPairStats._count.id
+      },
+      bulkQueue: {
+        pending: bulkQueueStats._count.id
+      },
+      logs: {
+        last24h: logsStats._count.id,
+        errors24h
+      }
+    });
+  } catch (error: any) {
+    console.error('[DB] Failed to get stats:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all accounts from database
+app.get('/db/accounts', async (req, res) => {
+  try {
+    const dbAccounts = await db.whatsAppAccount.findMany({
+      include: {
+        personality: {
+          select: {
+            name: true,
+            age: true,
+            occupation: true,
+            location: true,
+            chronotype: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    res.json({
+      accounts: dbAccounts.map(acc => ({
+        id: acc.id,
+        phoneNumber: acc.phoneNumber,
+        name: acc.name,
+        status: acc.status,
+        warmingEnabled: acc.warmingEnabled,
+        pool: acc.pool,
+        healthScore: acc.healthScore,
+        currentPhase: acc.currentPhase,
+        warmingDays: acc.warmingDays,
+        messagesSent: acc.messagesSent,
+        messagesReceived: acc.messagesReceived,
+        autoResponsesSent: acc.autoResponsesSent,
+        createdAt: acc.createdAt,
+        updatedAt: acc.updatedAt,
+        personality: acc.personality
+      }))
+    });
+  } catch (error: any) {
+    console.error('[DB] Failed to get accounts:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all sessions from database
+app.get('/db/sessions', async (req, res) => {
+  try {
+    const sessions = await db.whatsAppSession.findMany({
+      orderBy: { updatedAt: 'desc' }
+    });
+
+    res.json({
+      sessions: sessions.map(s => ({
+        id: s.id,
+        accountId: s.accountId,
+        phoneNumber: s.phoneNumber,
+        hasCreds: !!s.creds && s.creds.length > 10,
+        hasKeys: !!s.keys && s.keys !== '{}',
+        lastSync: s.lastSync,
+        createdAt: s.createdAt,
+        updatedAt: s.updatedAt
+      }))
+    });
+  } catch (error: any) {
+    console.error('[DB] Failed to get sessions:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all personalities from database
+app.get('/db/personalities', async (req, res) => {
+  try {
+    const personalities = await db.personality.findMany({
+      orderBy: { createdAt: 'desc' }
+    });
+
+    res.json({
+      personalities: personalities.map(p => ({
+        id: p.id,
+        accountId: p.accountId,
+        phoneNumber: p.phoneNumber,
+        name: p.name,
+        age: p.age,
+        occupation: p.occupation,
+        location: p.location,
+        chronotype: p.chronotype,
+        activeHoursStart: p.activeHoursStart,
+        activeHoursEnd: p.activeHoursEnd,
+        avgResponseTime: p.avgResponseTime,
+        emojiUsage: p.emojiUsage,
+        createdAt: p.createdAt
+      }))
+    });
+  } catch (error: any) {
+    console.error('[DB] Failed to get personalities:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all chat pairs from database
+app.get('/db/chat-pairs', async (req, res) => {
+  try {
+    const chatPairs = await db.chatPair.findMany({
+      orderBy: { updatedAt: 'desc' }
+    });
+
+    res.json({
+      chatPairs: chatPairs.map(p => ({
+        id: p.id,
+        account1Id: p.account1Id,
+        account2Id: p.account2Id,
+        messageCount: p.messageCount,
+        currentTopic: p.currentTopic,
+        relationshipStage: p.relationshipStage,
+        isActive: p.isActive,
+        startedAt: p.startedAt,
+        lastMessageAt: p.lastMessageAt
+      }))
+    });
+  } catch (error: any) {
+    console.error('[DB] Failed to get chat pairs:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get event logs from database
+app.get('/db/logs', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 100;
+    const logs = await db.eventLog.findMany({
+      take: limit,
+      orderBy: { timestamp: 'desc' }
+    });
+
+    res.json({
+      logs: logs.map(l => ({
+        id: l.id,
+        accountId: l.accountId,
+        type: l.type,
+        message: l.message,
+        timestamp: l.timestamp
+      }))
+    });
+  } catch (error: any) {
+    console.error('[DB] Failed to get logs:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete account from database (and all related data)
+app.delete('/db/clean/account/:id', async (req, res) => {
+  const accountId = req.params.id;
+
+  console.log('==========================================');
+  console.log('[DB DELETE] Request to delete account:', accountId);
+  console.log('==========================================');
+
+  // Security: Validate accountId
+  const validation = validateAccountId(accountId);
+  if (!validation.valid) {
+    console.log('[DB DELETE] Validation failed:', validation.error);
+    return res.status(400).json({ error: validation.error });
+  }
+
+  try {
+    // Also stop the session if running in memory
+    const account = accounts.get(accountId);
+    if (account) {
+      console.log('[DB DELETE] Stopping active session for:', accountId);
+      pendingDeletion.add(accountId);
+      await stopSession(accountId);
+      accounts.delete(accountId);
+      clearChatPartner(accountId);
+    }
+
+    // Delete from database - use transaction for atomicity
+    console.log('[DB DELETE] Starting database deletion...');
+
+    const deleteResults = {
+      chatPairs: 0,
+      messages: 0,
+      eventLogs: 0,
+      personalities: 0,
+      sessions: 0,
+      account: false
+    };
+
+    // Delete chat pairs
+    const chatPairResult = await db.chatPair.deleteMany({
+      where: {
+        OR: [{ account1Id: accountId }, { account2Id: accountId }]
+      }
+    });
+    deleteResults.chatPairs = chatPairResult.count;
+    console.log('[DB DELETE] Deleted chat pairs:', chatPairResult.count);
+
+    // Delete messages
+    const messageResult = await db.message.deleteMany({
+      where: {
+        OR: [{ accountId: accountId }, { toAccountId: accountId }]
+      }
+    });
+    deleteResults.messages = messageResult.count;
+    console.log('[DB DELETE] Deleted messages:', messageResult.count);
+
+    // Delete event logs
+    const eventLogResult = await db.eventLog.deleteMany({
+      where: { accountId: accountId }
+    });
+    deleteResults.eventLogs = eventLogResult.count;
+    console.log('[DB DELETE] Deleted event logs:', eventLogResult.count);
+
+    // Delete personality
+    const personalityResult = await db.personality.deleteMany({
+      where: { accountId: accountId }
+    });
+    deleteResults.personalities = personalityResult.count;
+    console.log('[DB DELETE] Deleted personalities:', personalityResult.count);
+
+    // Delete WhatsApp session
+    const sessionResult = await db.whatsAppSession.deleteMany({
+      where: { accountId: accountId }
+    });
+    deleteResults.sessions = sessionResult.count;
+    console.log('[DB DELETE] Deleted sessions:', sessionResult.count);
+
+    // Finally delete the account
+    const accountResult = await db.whatsAppAccount.delete({
+      where: { id: accountId }
+    });
+    deleteResults.account = !!accountResult;
+    console.log('[DB DELETE] Account deleted:', !!accountResult);
+
+    // Also remove from personality registry to prevent regeneration
+    personalityRegistry.delete(accountId);
+
+    // Clean up tracking maps
+    reconnectAttempts.delete(accountId);
+    everConnected.delete(accountId);
+    pendingDeletion.delete(accountId);
+    recentPairingSuccess.delete(accountId);
+
+    console.log('[DB DELETE] ✅ Successfully deleted account:', accountId);
+    console.log('[DB DELETE] Results:', deleteResults);
+
+    addLog('info', `🗑️ Account deleted from database: ${accountId} (pairs: ${deleteResults.chatPairs}, msgs: ${deleteResults.messages}, logs: ${deleteResults.eventLogs})`);
+    io.emit('account-deleted', { accountId });
+
+    res.json({
+      success: true,
+      accountId,
+      deleted: deleteResults
+    });
+  } catch (error: any) {
+    console.error('[DB DELETE] ❌ Failed to delete account:', accountId, error);
+    addLog('error', `❌ Failed to delete account: ${error.message}`, accountId);
+    res.status(500).json({ error: error.message, details: error.toString() });
+  }
+});
+
+// Delete session from database (user will need to scan QR again)
+app.delete('/db/clean/session/:id', async (req, res) => {
+  const accountId = req.params.id;
+
+  console.log('==========================================');
+  console.log('[DB DELETE SESSION] Request to delete session:', accountId);
+  console.log('==========================================');
+
+  // Security: Validate accountId
+  const validation = validateAccountId(accountId);
+  if (!validation.valid) {
+    console.log('[DB DELETE SESSION] Validation failed:', validation.error);
+    return res.status(400).json({ error: validation.error });
+  }
+
+  try {
+    const result = await db.whatsAppSession.delete({
+      where: { accountId: accountId }
+    });
+
+    console.log('[DB DELETE SESSION] ✅ Session deleted:', accountId);
+
+    // Also clean up from memory tracking
+    reconnectAttempts.delete(accountId);
+    everConnected.delete(accountId);
+    recentPairingSuccess.delete(accountId);
+
+    addLog('info', `🔑 Session deleted from database: ${accountId}`);
+    res.json({ success: true, accountId, message: 'Session deleted. User will need to scan QR again.' });
+  } catch (error: any) {
+    console.error('[DB DELETE SESSION] ❌ Failed to delete session:', accountId, error);
+    addLog('error', `❌ Failed to delete session: ${error.message}`, accountId);
+    res.status(500).json({ error: error.message, details: error.toString() });
+  }
+});
+
+// Clear old logs from database
+app.delete('/db/clean/logs', async (req, res) => {
+  try {
+    const days = parseInt(req.query.days as string) || 7;
+    const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+    const result = await db.eventLog.deleteMany({
+      where: {
+        timestamp: { lt: cutoffDate }
+      }
+    });
+
+    addLog('info', `🧹 Cleared ${result.count} logs older than ${days} days`);
+    res.json({ success: true, deletedCount: result.count, message: `Deleted ${result.count} logs older than ${days} days` });
+  } catch (error: any) {
+    console.error('[DB] Failed to clear logs:', error);
     res.status(500).json({ error: error.message });
   }
 });
